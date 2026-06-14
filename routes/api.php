@@ -15,6 +15,9 @@ use App\Http\Controllers\Api\AiRecommendationController;
 use App\Http\Controllers\Api\LogController;
 use App\Http\Controllers\Api\WishlistController;
 use App\Http\Controllers\Api\ProductImageController;
+use App\Http\Controllers\Api\WalletController;
+use App\Http\Controllers\Api\OfferController;
+use App\Http\Controllers\Api\NotificationController;
 
 
 /*
@@ -63,6 +66,9 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     
     // Orders
     Route::apiResource('orders', OrderController::class);
+    Route::post('orders/{id}/seller-confirm', [OrderController::class, 'sellerConfirm']);
+    Route::post('orders/{id}/complete', [OrderController::class, 'complete'])->middleware('admin');
+    Route::post('orders/{id}/cancel', [OrderController::class, 'cancel']);
     
     // Rentals
     Route::apiResource('rentals', RentalController::class);
@@ -80,50 +86,35 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     // AI Recommendations
     Route::apiResource('recommendations', AiRecommendationController::class);
 
-// Wallet
-    Route::get('wallet', [App\Http\Controllers\Api\WalletController::class, 'show']);
-    Route::post('wallet/topup', [App\Http\Controllers\Api\WalletController::class, 'topup']);
-
-    // Orders - Actions
-    Route::post('orders/{id}/seller-confirm', [App\Http\Controllers\Api\OrderController::class, 'sellerConfirm']);
-    Route::post('orders/{id}/complete', [App\Http\Controllers\Api\OrderController::class, 'complete'])->middleware('admin');
-    Route::post('orders/{id}/cancel', [App\Http\Controllers\Api\OrderController::class, 'cancel']);
+    // Wallet
+    Route::get('wallet', [WalletController::class, 'show']);
+    Route::post('wallet/topup', [WalletController::class, 'topup']);
 
     // Offers
-    Route::get('offers', [App\Http\Controllers\Api\OfferController::class, 'index']);
-    Route::post('offers', [App\Http\Controllers\Api\OfferController::class, 'store']);
-    Route::post('offers/{id}/accept', [App\Http\Controllers\Api\OfferController::class, 'accept']);
-    Route::post('offers/{id}/reject', [App\Http\Controllers\Api\OfferController::class, 'reject']);
+    Route::get('offers', [OfferController::class, 'index']);
+    Route::post('offers', [OfferController::class, 'store']);
+    Route::post('offers/{id}/accept', [OfferController::class, 'accept']);
+    Route::post('offers/{id}/reject', [OfferController::class, 'reject']);
 
     // Notifications
-    Route::get('notifications', [App\Http\Controllers\Api\NotificationController::class, 'index']);
-    Route::post('notifications/{id}/read', [App\Http\Controllers\Api\NotificationController::class, 'markRead']);
-    Route::post('notifications/read-all', [App\Http\Controllers\Api\NotificationController::class, 'markAllRead']);
+    Route::get('notifications', [NotificationController::class, 'index']);
+    Route::post('notifications/{id}/read', [NotificationController::class, 'markRead']);
+    Route::post('notifications/read-all', [NotificationController::class, 'markAllRead']);
 
     // Boost
-    Route::post('products/{id}/boost', [App\Http\Controllers\Api\ProductController::class, 'boost']);
-        
+    Route::post('products/{id}/boost', [ProductController::class, 'boost']);
     
-    // Logs (admin only)
-// Logs (admin only) 
-Route::middleware('admin')->prefix('logs')->group(function () {
-    
-    
-    Route::get('/stats', [LogController::class, 'stats']);                    
-    Route::get('/entity/{entityType}/{entityId}', [LogController::class, 'entityLogs']);  
-    Route::get('/user/{userId}', [LogController::class, 'userLogs']);         
-    
-   
-    Route::get('/', [LogController::class, 'index']);                        
-    Route::get('/{id}', [LogController::class, 'show']);      
-    
+    // Logs (admin only) 
+    Route::middleware('admin')->prefix('logs')->group(function () {
+        Route::get('/stats', [LogController::class, 'stats']);                    
+        Route::get('/entity/{entityType}/{entityId}', [LogController::class, 'entityLogs']);  
+        Route::get('/user/{userId}', [LogController::class, 'userLogs']);         
+        Route::get('/', [LogController::class, 'index']);                        
+        Route::get('/{id}', [LogController::class, 'show']);      
+    });
 });
 
-
-  
-});
-
-  Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
+Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     // wishlist Routes
     Route::get('wishlist', [WishlistController::class, 'index']);
     Route::post('wishlist', [WishlistController::class, 'store']);
@@ -132,10 +123,7 @@ Route::middleware('admin')->prefix('logs')->group(function () {
     Route::get('wishlist/check', [WishlistController::class, 'check']);
 });
 
-
-
 Route::prefix('v1')->group(function () {
-    
     // Public routes 
     Route::get('products/{productId}/images', [ProductImageController::class, 'index']);
     Route::get('product-images/{id}', [ProductImageController::class, 'show']);
