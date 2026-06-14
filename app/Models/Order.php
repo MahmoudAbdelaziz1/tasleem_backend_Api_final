@@ -35,6 +35,8 @@ class Order extends Model
         'quantity',
         'unit_price',
         'total_price',
+        'tasleem_fee',     
+        'delivery_fee',     
         'status',
     ];
 
@@ -46,6 +48,8 @@ class Order extends Model
     protected $casts = [
         'unit_price' => 'decimal:2',
         'total_price' => 'decimal:2',
+        'tasleem_fee'   => 'decimal:2',   
+        'delivery_fee'  => 'decimal:2',     
     ];
 
     /**

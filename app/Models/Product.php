@@ -28,6 +28,9 @@ class Product extends Model
         'addingToCart_count',
         'status',
         'type',
+        'is_boosted',         
+        'boost_expires_at',    
+    
     ];
 
     /**
@@ -38,6 +41,8 @@ class Product extends Model
     protected $casts = [
         'price' => 'decimal:2',
         'rate' => 'decimal:2',
+        'is_boosted' => 'boolean',          
+        'boost_expires_at' => 'datetime',    
     ];
 
     /**
@@ -97,6 +102,25 @@ class Product extends Model
     public function recommendations()
     {
         return $this->hasMany(AiRecommendation::class);
+    }
+
+
+
+
+
+
+        
+    public function isActivelyBoosted()
+    {
+        return $this->is_boosted 
+            && $this->boost_expires_at 
+            && $this->boost_expires_at->isFuture();
+    }
+
+   
+    public function scopeBoostedFirst($query)
+    {
+        return $query->orderByRaw("CASE WHEN is_boosted=1 AND boost_expires_at>NOW() THEN 0 ELSE 1 END ASC");
     }
 
     /**

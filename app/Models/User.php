@@ -28,6 +28,7 @@ class User extends Authenticatable
         'role',
         'status',
         'post_code',
+        'wallet_balance'
     ];
 
     /**
@@ -48,6 +49,7 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
+         'wallet_balance' => 'decimal:2',
     ];
 
     /**
@@ -109,6 +111,19 @@ class User extends Authenticatable
         return $this->hasMany(Payment::class);
     }
 
+
+
+        // العلاقات الجديدة للمحفظة والإشعارات
+    public function walletTransactions()
+    {
+        return $this->hasMany(WalletTransaction::class);
+    }
+
+    public function appNotifications()
+    {
+        return $this->hasMany(Notification::class);
+    }
+
     /**
      * Accessors & Mutators
      */
@@ -124,6 +139,8 @@ class User extends Authenticatable
     {
         return $this->role === 'admin';
     }
+
+
 
   
     public function isSeller()

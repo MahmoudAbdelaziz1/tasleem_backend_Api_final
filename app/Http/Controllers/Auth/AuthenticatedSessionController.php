@@ -27,7 +27,6 @@ class AuthenticatedSessionController extends Controller
         $request->authenticate();
         $request->session()->regenerate();
 
-        
         return $this->redirectByRole(Auth::user());
     }
 
@@ -45,7 +44,7 @@ class AuthenticatedSessionController extends Controller
     }
 
     /**
-     * 
+     * Redirect user based on their role.
      */
     protected function redirectByRole($user): RedirectResponse
     {

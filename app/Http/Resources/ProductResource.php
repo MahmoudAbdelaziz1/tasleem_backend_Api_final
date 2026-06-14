@@ -26,6 +26,8 @@ class ProductResource extends JsonResource
             'type' => $this->type,
             'created_at' => $this->created_at ? $this->created_at->format('Y-m-d H:i:s') : null,
             'updated_at' => $this->updated_at ? $this->updated_at->format('Y-m-d H:i:s') : null,
+            'is_boosted'       => $this->isActivelyBoosted(),
+            'boost_expires_at' => $this->boost_expires_at ? $this->boost_expires_at->format('Y-m-d H:i:s') : null,
         ];
     }
 }

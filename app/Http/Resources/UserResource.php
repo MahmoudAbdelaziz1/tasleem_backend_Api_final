@@ -22,6 +22,7 @@ class UserResource extends JsonResource
             'status' => $this->status,
             'created_at' => $this->created_at ? $this->created_at->format('Y-m-d H:i:s') : null,
             'updated_at' => $this->updated_at ? $this->updated_at->format('Y-m-d H:i:s') : null,
+            'wallet_balance' => (float) $this->wallet_balance,
         ];
     }
 }

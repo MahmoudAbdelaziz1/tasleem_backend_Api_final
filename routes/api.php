@@ -79,6 +79,30 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     
     // AI Recommendations
     Route::apiResource('recommendations', AiRecommendationController::class);
+
+// Wallet
+    Route::get('wallet', [App\Http\Controllers\Api\WalletController::class, 'show']);
+    Route::post('wallet/topup', [App\Http\Controllers\Api\WalletController::class, 'topup']);
+
+    // Orders - Actions
+    Route::post('orders/{id}/seller-confirm', [App\Http\Controllers\Api\OrderController::class, 'sellerConfirm']);
+    Route::post('orders/{id}/complete', [App\Http\Controllers\Api\OrderController::class, 'complete'])->middleware('admin');
+    Route::post('orders/{id}/cancel', [App\Http\Controllers\Api\OrderController::class, 'cancel']);
+
+    // Offers
+    Route::get('offers', [App\Http\Controllers\Api\OfferController::class, 'index']);
+    Route::post('offers', [App\Http\Controllers\Api\OfferController::class, 'store']);
+    Route::post('offers/{id}/accept', [App\Http\Controllers\Api\OfferController::class, 'accept']);
+    Route::post('offers/{id}/reject', [App\Http\Controllers\Api\OfferController::class, 'reject']);
+
+    // Notifications
+    Route::get('notifications', [App\Http\Controllers\Api\NotificationController::class, 'index']);
+    Route::post('notifications/{id}/read', [App\Http\Controllers\Api\NotificationController::class, 'markRead']);
+    Route::post('notifications/read-all', [App\Http\Controllers\Api\NotificationController::class, 'markAllRead']);
+
+    // Boost
+    Route::post('products/{id}/boost', [App\Http\Controllers\Api\ProductController::class, 'boost']);
+        
     
     // Logs (admin only)
 // Logs (admin only) 
@@ -91,7 +115,7 @@ Route::middleware('admin')->prefix('logs')->group(function () {
     
    
     Route::get('/', [LogController::class, 'index']);                        
-    Route::get('/{id}', [LogController::class, 'show']);                     
+    Route::get('/{id}', [LogController::class, 'show']);      
     
 });
 
@@ -118,9 +142,13 @@ Route::prefix('v1')->group(function () {
 
     // Protected routes 
     Route::middleware('auth:sanctum')->group(function () {
-        // Upload images
+        // Upload files
         Route::post('product-images/upload', [ProductImageController::class, 'store']);
         Route::post('product-images/upload-single', [ProductImageController::class, 'uploadSingle']);
+        
+        // Add from URLs (NEW)
+        Route::post('product-images/add-from-url', [ProductImageController::class, 'addFromUrl']);
+        Route::post('product-images/add-multiple-urls', [ProductImageController::class, 'addMultipleFromUrls']);
         
         // Update and delete
         Route::put('product-images/{id}', [ProductImageController::class, 'update']);

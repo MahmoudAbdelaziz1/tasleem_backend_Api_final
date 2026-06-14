@@ -108,8 +108,8 @@
             </table>
         </div>
         
-        <div class="d-flex justify-content-center">
-      
+        <div class="d-flex justify-content-center mt-3">
+            {{ $products->links('pagination::bootstrap-5') }}
         </div>
     </div>
 </div>

@@ -13,69 +13,70 @@ class ProductController extends BaseController
     /**
      * Display a listing of products
      */
-/**
- * Display a listing of products
- */
-public function index(Request $request)
-{
-    $query = Product::with(['category', 'owner', 'images']);
+    public function index(Request $request)
+    {
+        $query = Product::with(['category', 'owner', 'images']);
 
-  
-    if ($request->has('category_id')) {
-        $query->where('category_id', $request->category_id);
-    }
+        // فلتر IDs
+        if ($request->has('ids')) {
+            $ids = array_values(array_filter(array_map('intval', explode(',', $request->ids))));
+            if (!empty($ids)) {
+                $query->whereIn('id', $ids);
+            }
+        }
 
+        // باقي الفلاتر
+        if ($request->has('category_id')) {
+            $query->where('category_id', $request->category_id);
+        }
 
-    if ($request->has('owner_id')) {
-        $query->where('owner_id', $request->owner_id);
-    }
+        if ($request->has('owner_id')) {
+            $query->where('owner_id', $request->owner_id);
+        }
 
-
-    if ($request->has('status')) {
-        $query->where('status', $request->status);
-    }
-
+        if ($request->has('status')) {
+            $query->where('status', $request->status);
+        }
+        
+        if ($request->has('type')) {
+            $query->where('type', $request->type);
+        }
     
-    if ($request->has('type')) {
-        $query->where('type', $request->type);
-    }
-
- 
-    if ($request->has('search')) {
-        $query->where('name', 'LIKE', "%{$request->search}%");
-    }
-
-  
-    if ($request->has('min_price')) {
-        $query->where('price', '>=', $request->min_price);
-    }
-    if ($request->has('max_price')) {
-        $query->where('price', '<=', $request->max_price);
-    }
-
+        if ($request->has('search')) {
+            $query->where('name', 'LIKE', "%{$request->search}%");
+        }
     
-    $allowedSortFields = ['id', 'name', 'price', 'created_at', 'updated_at', 'view_count', 'rate', 'pay_count', 'addingToCart_count', 'quantity'];
-    
-    $sortField = $request->get('sort_by', 'created_at');
-   
-    if (!in_array($sortField, $allowedSortFields)) {
-        $sortField = 'created_at';
+        if ($request->has('min_price')) {
+            $query->where('price', '>=', $request->min_price);
+        }
+        if ($request->has('max_price')) {
+            $query->where('price', '<=', $request->max_price);
+        }
+
+        // ترتيب المنتجات المعززة أولاً (دائماً)
+        $query->boostedFirst();
+
+        // الترتيب العادي
+        $allowedSortFields = ['id', 'name', 'price', 'created_at', 'updated_at', 'view_count', 'rate', 'pay_count', 'addingToCart_count', 'quantity'];
+        
+        $sortField = $request->get('sort_by', 'created_at');
+        if (!in_array($sortField, $allowedSortFields)) {
+            $sortField = 'created_at';
+        }
+        
+        $sortOrder = $request->get('sort_order', 'desc');
+        $sortOrder = in_array(strtolower($sortOrder), ['asc', 'desc']) ? strtolower($sortOrder) : 'desc';
+        
+        $query->orderBy($sortField, $sortOrder);
+
+        $products = $query->paginate($request->get('per_page', 15));
+
+        return $this->sendPaginated(
+            $products,
+            ProductResource::collection($products),
+            'Products retrieved successfully'
+        );
     }
-    
-    $sortOrder = $request->get('sort_order', 'desc');
-  
-    $sortOrder = in_array(strtolower($sortOrder), ['asc', 'desc']) ? strtolower($sortOrder) : 'desc';
-    
-    $query->orderBy($sortField, $sortOrder);
-
-    $products = $query->paginate($request->get('per_page', 15));
-
-    return $this->sendPaginated(
-        $products,
-        ProductResource::collection($products),
-        'Products retrieved successfully'
-    );
-}
 
     /**
      * Store a newly created product
@@ -99,7 +100,6 @@ public function index(Request $request)
 
         $product = Product::create($request->all());
 
-      
         \App\Models\Log::create([
             'user_id' => auth()->id(),
             'action_type' => 'CREATE',
@@ -236,4 +236,68 @@ public function index(Request $request)
             'Similar products retrieved successfully'
         );
     }
+
+
+
+
+
+
+
+    /**
+     * تعزيز المنتج (Boost)
+     * POST /api/products/{id}/boost
+     * Body: { "days": 7 }
+     */
+    public function boost(Request $request, $id)
+    {
+        $request->validate([
+            'days' => 'required|integer|min:1|max:30',
+        ]);
+
+        $product = \App\Models\Product::findOrFail($id);
+
+        // التحقق من أن المستخدم هو صاحب المنتج
+        if ($product->owner_id !== auth()->id()) {
+            return $this->sendError('Not your product', null, 403);
+        }
+
+        $cost = (float)config('tasleem.boost_fee_per_day') * $request->days;
+
+        // خصم المبلغ من المحفظة
+        try {
+            \App\Services\WalletService::move(
+                auth()->user(),
+                'boost_fee',
+                -$cost,
+                'product',
+                $product->id,
+                'Listing boost for ' . $request->days . ' days'
+            );
+        } catch (\RuntimeException $e) {
+            return $this->sendError($e->getMessage(), null, 402);
+        }
+
+        // تحديث المنتج
+        $product->update([
+            'is_boosted'       => true,
+            'boost_expires_at' => now()->addDays($request->days),
+        ]);
+
+        // إشعار المستخدم
+        \App\Services\Notify::send(
+            auth()->id(),
+            'boost_activated',
+            'Listing boosted',
+            'Your listing "' . $product->name . '" has been boosted until ' . $product->boost_expires_at->toDayDateTimeString() . '.',
+            'product',
+            $product->id
+        );
+
+        return $this->sendResponse(
+            new \App\Http\Resources\ProductResource($product),
+            'Listing boosted successfully'
+        );
+    }
+
+
 }

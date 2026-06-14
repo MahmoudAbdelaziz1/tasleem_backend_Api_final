@@ -8,12 +8,18 @@ use App\Http\Resources\OrderResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use App\Http\Controllers\Api\LogController;  
+use App\Services\OrderService;
+use App\Services\WalletService;
+use App\Services\Notify;
+use App\Models\Payment;
+use RuntimeException;
 
 class OrderController extends BaseController
 {
     public function index(Request $request)
     {
-        $query = Order::with(['user', 'product', 'payment']);
+        
+        $query = Order::with(['user', 'product.images', 'payment']);
 
         if ($request->has('user_id')) {
             $query->where('user_id', $request->user_id);
@@ -25,7 +31,6 @@ class OrderController extends BaseController
 
         $orders = $query->paginate($request->get('per_page', 15));
 
-    
         LogController::addLog(
             userId: auth()->id(),
             actionType: 'VIEW',
@@ -47,76 +52,48 @@ class OrderController extends BaseController
         );
     }
 
-    public function store(Request $request)
-    {
-        $validator = Validator::make($request->all(), [
-            'user_id' => 'required|exists:users,id',
-            'product_id' => 'required|exists:products,id',
-            'quantity' => 'required|integer|min:1',
-            'unit_price' => 'required|numeric|min:0',
-        ]);
+public function store(Request $request)
+{
+    $request->validate([
+        'product_id' => 'required|exists:products,id',
+        'quantity'   => 'required|integer|min:1',
+    ]);
 
-        if ($validator->fails()) {
-           
-            LogController::addLog(
-                userId: auth()->id() ?? $request->user_id,
-                actionType: 'ERROR',
-                actionName: 'order_create_failed',
-                module: 'orders',
-                entityId: null,
-                oldData: null,
-                newData: $request->all(),
-                ipAddress: $request->ip(),
-                userAgent: $request->userAgent(),
-                status: 'failed',
-                message: 'Validation failed: ' . json_encode($validator->errors()),
-                errorCode: 422
-            );
-            return $this->sendError('Validation Error', $validator->errors(), 422);
-        }
+    $product = \App\Models\Product::findOrFail($request->product_id);
 
-        $order = Order::create([
-            'user_id' => $request->user_id,
-            'product_id' => $request->product_id,
-            'quantity' => $request->quantity,
-            'unit_price' => $request->unit_price,
-            'total_price' => $request->quantity * $request->unit_price,
-            'status' => 'pending',
-        ]);
+    // منع شراء المنتج من صاحبه
+    if ($product->owner_id === auth()->id()) {
+        return $this->sendError('You cannot buy your own product', null, 400);
+    }
 
-     
-        $product = $order->product;
-        $product->increment('pay_count', $request->quantity);
-        $product->decrement('quantity', $request->quantity);
-
-        
-        LogController::addLog(
-            userId: $order->user_id,
-            actionType: 'CREATE',
-            actionName: 'order_create',
-            module: 'orders',
-            entityId: $order->id,
-            oldData: null,
-            newData: $order->toArray(),
-            ipAddress: $request->ip(),
-            userAgent: $request->userAgent(),
-            status: 'success',
-            message: 'Order created: #' . $order->id . ' for product: ' . ($product->name ?? 'Unknown')
+    try {
+        // استخدام OrderService لإنشاء الطلب + خصم الأموال + تحديث المخزون
+        $order = OrderService::placeOrder(
+            auth()->id(),
+            $product->id,
+            $request->quantity,
+            (float) $product->price,
+            'pending' // حالة أولية: بانتظار تأكيد البائع
         );
 
         return $this->sendResponse(
-            new OrderResource($order->load(['user', 'product'])),
-            'Order created successfully',
+            new \App\Http\Resources\OrderResource($order->load('product.images', 'payment')),
+            'Order placed successfully. Awaiting seller confirmation.',
             201
         );
+
+    } catch (RuntimeException $e) {
+        // إذا كان الرصيد غير كافي أو الكمية غير متوفرة
+        return $this->sendError($e->getMessage(), null, 402);
     }
+}
 
     public function show($id)
     {
-        $order = Order::with(['user', 'product', 'payment'])->find($id);
+       
+        $order = Order::with(['user', 'product.images', 'payment'])->find($id);
 
         if (!$order) {
-           
             LogController::addLog(
                 userId: auth()->id(),
                 actionType: 'ERROR',
@@ -134,7 +111,6 @@ class OrderController extends BaseController
             return $this->sendError('Order not found');
         }
 
-    
         LogController::addLog(
             userId: auth()->id(),
             actionType: 'VIEW',
@@ -210,7 +186,6 @@ class OrderController extends BaseController
             $order->save();
         }
 
-     
         LogController::addLog(
             userId: auth()->id(),
             actionType: 'UPDATE',
@@ -274,7 +249,6 @@ class OrderController extends BaseController
         $oldData = $order->toArray();
         $order->delete();
 
-        
         LogController::addLog(
             userId: auth()->id(),
             actionType: 'DELETE',
@@ -291,4 +265,191 @@ class OrderController extends BaseController
 
         return $this->sendResponse(null, 'Order deleted successfully');
     }
+
+
+
+
+    public function sellerConfirm($id)
+    {
+        $order = \App\Models\Order::with('product')->find($id);
+
+        if (!$order) {
+            return $this->sendError('Order not found', null, 404);
+        }
+
+        // التحقق من أن المستخدم هو صاحب المنتج
+        if (auth()->id() !== $order->product->owner_id) {
+            return $this->sendError('Not your sale', null, 403);
+        }
+
+        // التحقق من حالة الطلب
+        if ($order->status !== 'pending') {
+            return $this->sendError('Order already handled', null, 400);
+        }
+
+        $order->update(['status' => 'confirmed']);
+
+        // إشعار المشتري
+        Notify::send(
+            $order->user_id,
+            'order_confirmed',
+            'Seller confirmed',
+            'Your order is confirmed — Tasleem is processing it.',
+            'order',
+            $order->id
+        );
+
+        return $this->sendResponse(
+            new \App\Http\Resources\OrderResource($order->fresh()->load('user', 'product.images', 'payment')),
+            'Order confirmed by seller'
+        );
+    }
+
+
+
+
+
+    public function complete($id)
+    {
+        $order = \App\Models\Order::with('product', 'payment')->find($id);
+
+        if (!$order) {
+            return $this->sendError('Order not found', null, 404);
+        }
+
+        /** @var \App\Models\User $currentUser */
+        $currentUser = auth()->user();
+        
+        if (!$currentUser->isAdmin()) {
+            return $this->sendError('Admin only', null, 403);
+        }
+
+        // التحقق من حالة الطلب
+        if ($order->status !== 'confirmed') {
+            return $this->sendError('Order is not confirmed', null, 400);
+        }
+
+        // التحقق من أن الدفع لم يتم تحريره بعد
+        if (!$order->payment || $order->payment->status !== 'pending') {
+            return $this->sendError('Nothing to release', null, 400);
+        }
+
+        $sellerId = $order->product->owner_id;
+        $seller   = \App\Models\User::find($sellerId);
+
+        // حساب المبلغ الذي سيحصل عليه البائع (السعر - عمولة المنصة)
+        $payout = (float) $order->total_price - (float) $order->tasleem_fee;
+
+        // تحرير الأموال للبائع
+        WalletService::move(
+            $seller,
+            'release',
+            $payout,
+            'order',
+            $order->id,
+            'Escrow released for order #' . $order->id
+        );
+
+        // تحديث حالة الدفع والطلب
+        $order->payment->update(['status' => 'completed']);
+        $order->update(['status' => 'delivered']); // delivered = Completed في التطبيق
+
+        // إشعار البائع
+        Notify::send(
+            $sellerId,
+            'order_completed',
+            'You got paid',
+            'EGP ' . number_format($payout, 2) . ' added to your wallet.',
+            'order',
+            $order->id
+        );
+
+        // إشعار المشتري
+        Notify::send(
+            $order->user_id,
+            'order_completed',
+            'Order complete',
+            'Your order is complete. Enjoy!',
+            'order',
+            $order->id
+        );
+
+        return $this->sendResponse(
+            new \App\Http\Resources\OrderResource($order->fresh()->load('user', 'product.images', 'payment')),
+            'Order completed and seller paid'
+        );
+    }    
+
+
+
+    /**
+     * إلغاء الطلب (بواسطة المشتري أو الأدمن) واسترداد الأموال.
+     * POST /api/orders/{id}/cancel
+     */
+    public function cancel($id)
+    {
+        $order = \App\Models\Order::with('product', 'payment')->find($id);
+
+        if (!$order) {
+            return $this->sendError('Order not found', null, 404);
+        }
+
+        // التحقق من الصلاحيات (المشتري أو الأدمن فقط)
+        /** @var \App\Models\User|null $currentUser */
+        $currentUser = auth()->user();
+        $isOwnerOrAdmin = auth()->id() === $order->user_id || ($currentUser && $currentUser->isAdmin());
+
+        // التحقق من أن الطلب لم يتم إتمامه بعد
+        if (!in_array($order->status, ['pending', 'confirmed'])) {
+            return $this->sendError('Too late to cancel', null, 400);
+        }
+
+        // استرداد الأموال إذا كانت محتجزة
+        if ($order->payment && $order->payment->status === 'pending') {
+            WalletService::move(
+                $order->user,
+                'refund',
+                (float) $order->payment->amount,
+                'order',
+                $order->id,
+                'Order cancelled — refund'
+            );
+            $order->payment->update(['status' => 'refunded']);
+        }
+
+        $order->update(['status' => 'cancelled']);
+
+        // إعادة المنتج للمخزون (إلا إذا كان Order model بيعملها تلقائياً في boot())
+        // ⚠️ إذا كان عندك restock تلقائي في Order model، احذف السطور التالية
+        $product = $order->product;
+        $product->increment('quantity', $order->quantity);
+        if ($product->status === '0') {
+            $product->status = '1';
+            $product->save();
+        }
+
+        // إشعار المشتري
+        Notify::send(
+            $order->user_id,
+            'order_refunded',
+            'Order cancelled',
+            'EGP ' . number_format($order->payment->amount ?? 0, 2) . ' returned to your wallet.',
+            'order',
+            $order->id
+        );
+
+        // إشعار البائع
+        Notify::send(
+            $product->owner_id,
+            'order_refunded',
+            'Order cancelled',
+            null,
+            'order',
+            $order->id
+        );
+
+        return $this->sendResponse(null, 'Order cancelled and refunded');
+    }
+
+
 }
