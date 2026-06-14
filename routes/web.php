@@ -22,7 +22,9 @@ use App\Http\Controllers\Admin\AdminLogController;
 */
 
 // ✅ Home - بدون Closure
-Route::get('/', [HomeController::class, 'index'])->name('home');
+Route::get('/', function () {
+    return view('welcome');
+})->name('home');
 
 // Dashboard
 Route::middleware(['auth', 'verified'])->group(function () {
