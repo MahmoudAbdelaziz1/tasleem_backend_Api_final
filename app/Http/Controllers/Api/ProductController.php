@@ -226,7 +226,7 @@ class ProductController extends BaseController
 
         $similar = Product::where('category_id', $product->category_id)
             ->where('id', '!=', $product->id)
-            ->where('status', 'available')
+            ->where('status', '1')
             ->with(['category', 'images'])
             ->limit(10)
             ->get();

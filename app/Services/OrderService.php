@@ -19,6 +19,7 @@ class OrderService
      * @param int $quantity الكمية
      * @param float $unitPrice سعر الوحدة
      * @param string $status حالة الطلب الأولية (pending أو confirmed)
+     * @param string $paymentMethod طريقة الدفع (wallet أو cash)
      * @return Order
      * @throws RuntimeException
      */
@@ -27,10 +28,11 @@ class OrderService
         int $productId,
         int $quantity,
         float $unitPrice,
-        string $status = 'pending'
+        string $status = 'pending',
+        string $paymentMethod = 'wallet' // ✅ معامل جديد
     ): Order {
         
-        return DB::transaction(function () use ($buyerId, $productId, $quantity, $unitPrice, $status) {
+        return DB::transaction(function () use ($buyerId, $productId, $quantity, $unitPrice, $status, $paymentMethod) {
             $buyer   = User::lockForUpdate()->find($buyerId);
             $product = Product::lockForUpdate()->find($productId);
 
@@ -48,15 +50,22 @@ class OrderService
             $buyerCharge = $itemTotal + $deliveryFee;
             $tasleemFee  = round($itemTotal * (float)config('tasleem.commission_rate'), 2);
 
-            // خصم المبلغ من المحفظة (Hold)
-            WalletService::move(
-                $buyer,
-                'hold',
-                -$buyerCharge,
-                'order',
-                null, // سيتم تحديثه بمعرف الطلب بعد الإنشاء
-                'Order payment held'
-            );
+            // ✅ التحقق من الرصيد وحجز الأموال فقط إذا كان الدفع بالمحفظة
+            if ($paymentMethod === 'wallet') {
+                if ($buyer->wallet_balance < $buyerCharge) {
+                    throw new RuntimeException('Insufficient wallet balance');
+                }
+
+                // خصم المبلغ من المحفظة (Hold)
+                WalletService::move(
+                    $buyer,
+                    'hold',
+                    -$buyerCharge,
+                    'order',
+                    null, // سيتم تحديثه بمعرف الطلب بعد الإنشاء
+                    'Order payment held'
+                );
+            }
 
             // إنشاء الطلب
             $order = Order::create([
@@ -70,23 +79,23 @@ class OrderService
                 'status'        => $status,
             ]);
 
-            
-        
-        $buyer->walletTransactions()
-            ->where('ref_type', 'order')
-            ->whereNull('ref_id')
-            ->latest()
-            ->first()
-            ?->update(['ref_id' => $order->order_id]); 
+            // ✅ تحديث ref_id للمعاملة فقط إذا كان الدفع بالمحفظة
+            if ($paymentMethod === 'wallet') {
+                $buyer->walletTransactions()
+                    ->where('ref_type', 'order')
+                    ->whereNull('ref_id')
+                    ->latest()
+                    ->first()
+                    ?->update(['ref_id' => $order->order_id]);
+            }
 
-
-            // إنشاء سجل الدفع
+            // ✅ إنشاء سجل الدفع بطريقة الدفع المحددة
             Payment::create([
                 'order_id'       => $order->order_id, 
                 'rental_id'      => null,              
                 'user_id'        => $buyerId,
                 'amount'         => $buyerCharge,
-                'payment_method' => 'wallet',
+                'payment_method' => $paymentMethod, // ✅ استخدام طريقة الدفع المحددة
                 'status'         => 'pending',
             ]);
 
@@ -98,15 +107,15 @@ class OrderService
                 $product->update(['status' => '0']); // 0 = sold out
             }
 
-                // إرسال إشعار للبائع
-        Notify::send(
-            $product->owner_id,
-            'order_placed',
-            'New order',
-            'Someone bought "' . $product->name . '". Confirm to proceed.',
-            'order',
-            $order->order_id  // ← غيّر من id إلى order_id
-        );
+            // إرسال إشعار للبائع
+            Notify::send(
+                $product->owner_id,
+                'order_placed',
+                'New order',
+                'Someone bought "' . $product->name . '". Confirm to proceed.',
+                'order',
+                $order->order_id
+            );
 
             return $order;
         });

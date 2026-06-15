@@ -2,11 +2,11 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Http\Controllers\Controller;
+use App\Http\Controllers\Api\BaseController;
 use App\Services\WalletService;
 use Illuminate\Http\Request;
 
-class WalletController extends Controller
+class WalletController extends BaseController
 {
     /**
      * عرض المحفظة + آخر 50 حركة.

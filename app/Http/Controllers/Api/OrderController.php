@@ -57,6 +57,7 @@ public function store(Request $request)
     $request->validate([
         'product_id' => 'required|exists:products,id',
         'quantity'   => 'required|integer|min:1',
+        'payment_method' => 'sometimes|in:wallet,cash', // ✅ إضافة validation
     ]);
 
     $product = \App\Models\Product::findOrFail($request->product_id);
@@ -66,6 +67,9 @@ public function store(Request $request)
         return $this->sendError('You cannot buy your own product', null, 400);
     }
 
+    // ✅ قراءة طريقة الدفع (افتراضي: wallet)
+    $paymentMethod = $request->input('payment_method', 'wallet');
+
     try {
         // استخدام OrderService لإنشاء الطلب + خصم الأموال + تحديث المخزون
         $order = OrderService::placeOrder(
@@ -73,7 +77,22 @@ public function store(Request $request)
             $product->id,
             $request->quantity,
             (float) $product->price,
-            'pending' // حالة أولية: بانتظار تأكيد البائع
+            'pending', // حالة أولية: بانتظار تأكيد البائع
+            $paymentMethod // ✅ تمرير طريقة الدفع
+        );
+
+        LogController::addLog(
+            userId: auth()->id(),
+            actionType: 'CREATE',
+            actionName: 'order_created',
+            module: 'orders',
+            entityId: $order->id,
+            oldData: null,
+            newData: $order->toArray(),
+            ipAddress: $request->ip(),
+            userAgent: $request->userAgent(),
+            status: 'success',
+            message: 'Order #' . $order->order_id . ' created with payment method: ' . $paymentMethod
         );
 
         return $this->sendResponse(
@@ -87,7 +106,6 @@ public function store(Request $request)
         return $this->sendError($e->getMessage(), null, 402);
     }
 }
-
     public function show($id)
     {
        
@@ -386,26 +404,31 @@ public function store(Request $request)
      * إلغاء الطلب (بواسطة المشتري أو الأدمن) واسترداد الأموال.
      * POST /api/orders/{id}/cancel
      */
-    public function cancel($id)
-    {
-        $order = \App\Models\Order::with('product', 'payment')->find($id);
+public function cancel($id)
+{
+    $order = \App\Models\Order::with('product', 'payment')->find($id);
 
-        if (!$order) {
-            return $this->sendError('Order not found', null, 404);
-        }
+    if (!$order) {
+        return $this->sendError('Order not found', null, 404);
+    }
 
-        // التحقق من الصلاحيات (المشتري أو الأدمن فقط)
-        /** @var \App\Models\User|null $currentUser */
-        $currentUser = auth()->user();
-        $isOwnerOrAdmin = auth()->id() === $order->user_id || ($currentUser && $currentUser->isAdmin());
+    // التحقق من الصلاحيات (المشتري أو الأدمن فقط)
+    /** @var \App\Models\User|null $currentUser */
+    $currentUser = auth()->user();
+    $isOwnerOrAdmin = auth()->id() === $order->user_id || ($currentUser && $currentUser->isAdmin());
 
-        // التحقق من أن الطلب لم يتم إتمامه بعد
-        if (!in_array($order->status, ['pending', 'confirmed'])) {
-            return $this->sendError('Too late to cancel', null, 400);
-        }
+    if (!$isOwnerOrAdmin) {
+        return $this->sendError('Unauthorized', null, 403);
+    }
 
-        // استرداد الأموال إذا كانت محتجزة
-        if ($order->payment && $order->payment->status === 'pending') {
+    // التحقق من أن الطلب لم يتم إتمامه بعد
+    if (!in_array($order->status, ['pending', 'confirmed'])) {
+        return $this->sendError('Too late to cancel', null, 400);
+    }
+
+    // ✅ استرداد الأموال فقط إذا كان الدفع بالمحفظة
+    if ($order->payment && $order->payment->status === 'pending') {
+        if ($order->payment->payment_method === 'wallet') {
             WalletService::move(
                 $order->user,
                 'refund',
@@ -415,41 +438,48 @@ public function store(Request $request)
                 'Order cancelled — refund'
             );
             $order->payment->update(['status' => 'refunded']);
+        } else {
+            // COD - فقط تحديث حالة الدفع
+            $order->payment->update(['status' => 'cancelled']);
         }
-
-        $order->update(['status' => 'cancelled']);
-
-        // إعادة المنتج للمخزون (إلا إذا كان Order model بيعملها تلقائياً في boot())
-        // ⚠️ إذا كان عندك restock تلقائي في Order model، احذف السطور التالية
-        $product = $order->product;
-        $product->increment('quantity', $order->quantity);
-        if ($product->status === '0') {
-            $product->status = '1';
-            $product->save();
-        }
-
-        // إشعار المشتري
-        Notify::send(
-            $order->user_id,
-            'order_refunded',
-            'Order cancelled',
-            'EGP ' . number_format($order->payment->amount ?? 0, 2) . ' returned to your wallet.',
-            'order',
-            $order->id
-        );
-
-        // إشعار البائع
-        Notify::send(
-            $product->owner_id,
-            'order_refunded',
-            'Order cancelled',
-            null,
-            'order',
-            $order->id
-        );
-
-        return $this->sendResponse(null, 'Order cancelled and refunded');
     }
+
+    $order->update(['status' => 'cancelled']);
+
+    // إعادة المنتج للمخزون
+    $product = $order->product;
+    $product->increment('quantity', $order->quantity);
+    if ($product->status === '0') {
+        $product->status = '1';
+        $product->save();
+    }
+
+    // ✅ إشعار المشتري (رسالة مختلفة حسب طريقة الدفع)
+    $refundMessage = $order->payment && $order->payment->payment_method === 'wallet'
+        ? 'EGP ' . number_format($order->payment->amount ?? 0, 2) . ' returned to your wallet.'
+        : 'Your order has been cancelled.';
+
+    Notify::send(
+        $order->user_id,
+        'order_refunded',
+        'Order cancelled',
+        $refundMessage,
+        'order',
+        $order->id
+    );
+
+    // إشعار البائع
+    Notify::send(
+        $product->owner_id,
+        'order_refunded',
+        'Order cancelled',
+        null,
+        'order',
+        $order->id
+    );
+
+    return $this->sendResponse(null, 'Order cancelled');
+}
 
 
 }
