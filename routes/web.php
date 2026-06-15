@@ -2,16 +2,16 @@
 
 use App\Http\Controllers\ProfileController;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\Admin\AdminDashboardController;
-use App\Http\Controllers\Admin\AdminUserController;
-use App\Http\Controllers\Admin\AdminProductController;
-use App\Http\Controllers\Admin\AdminCategoryController;
-use App\Http\Controllers\Admin\AdminOrderController;
-use App\Http\Controllers\Admin\AdminRentalController;
-use App\Http\Controllers\Admin\AdminPaymentController;
-use App\Http\Controllers\Admin\AdminReportController;
-use App\Http\Controllers\Admin\AdminLogController;
+use App\Http\Controllers\DashboardController;                    // ✅ Dashboard العادي
+use App\Http\Controllers\Admin\DashboardController as AdminDashboardController; // ✅ Alias
+use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\ProductController;
+use App\Http\Controllers\Admin\CategoryController;
+use App\Http\Controllers\Admin\OrderController;
+use App\Http\Controllers\Admin\RentalController;
+use App\Http\Controllers\Admin\PaymentController;
+use App\Http\Controllers\Admin\ReportController;
+use App\Http\Controllers\Admin\LogController;
 
 
 /*
@@ -41,60 +41,60 @@ Route::middleware(['auth', 'admin'])
     ->name('admin.')
     ->group(function () {
 
-        // Admin Dashboard
+        // ✅ Admin Dashboard - استخدم Alias
         Route::get('/dashboard', [AdminDashboardController::class, 'index'])->name('dashboard');
 
         // ✅ Users Management - Routes المخصصة BEFORE resource
-        Route::get('users/sellers', [AdminUserController::class, 'sellers'])->name('users.sellers');
-        Route::get('users/customers', [AdminUserController::class, 'customers'])->name('users.customers');
-        Route::patch('users/{user}/toggle-status', [AdminUserController::class, 'toggleStatus'])->name('users.toggle-status');
+        Route::get('users/sellers', [UserController::class, 'sellers'])->name('users.sellers');
+        Route::get('users/customers', [UserController::class, 'customers'])->name('users.customers');
+        Route::patch('users/{user}/toggle-status', [UserController::class, 'toggleStatus'])->name('users.toggle-status');
 
         // ✅ Users Resource - بعد الـ custom routes
-        Route::resource('users', AdminUserController::class);
+        Route::resource('users', UserController::class);
 
         // ✅ Products Management
-        Route::delete('products/delete-image', [AdminProductController::class, 'deleteImage'])->name('products.delete-image');
-        Route::resource('products', AdminProductController::class);
+        Route::delete('products/delete-image', [ProductController::class, 'deleteImage'])->name('products.delete-image');
+        Route::resource('products', ProductController::class);
 
         // ✅ Categories Management
-        Route::patch('categories/{category}/toggle-status', [AdminCategoryController::class, 'toggleStatus'])->name('categories.toggle-status');
-        Route::resource('categories', AdminCategoryController::class);
+        Route::patch('categories/{category}/toggle-status', [CategoryController::class, 'toggleStatus'])->name('categories.toggle-status');
+        Route::resource('categories', CategoryController::class);
 
         // ✅ Orders Management - Custom routes BEFORE resource
-        Route::patch('orders/{order}/status', [AdminOrderController::class, 'updateStatus'])->name('orders.update-status');
-        Route::post('orders/bulk-update-status', [AdminOrderController::class, 'bulkUpdateStatus'])->name('orders.bulk-update-status');
-        Route::get('orders/{order}/print', [AdminOrderController::class, 'print'])->name('orders.print');
-        Route::get('orders/{order}/invoice', [AdminOrderController::class, 'invoice'])->name('orders.invoice');
-        Route::resource('orders', AdminOrderController::class);
+        Route::patch('orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.update-status');
+        Route::post('orders/bulk-update-status', [OrderController::class, 'bulkUpdateStatus'])->name('orders.bulk-update-status');
+        Route::get('orders/{order}/print', [OrderController::class, 'print'])->name('orders.print');
+        Route::get('orders/{order}/invoice', [OrderController::class, 'invoice'])->name('orders.invoice');
+        Route::resource('orders', OrderController::class);
 
         // ✅ Rentals Management - Custom routes BEFORE resource
-        Route::patch('rentals/{rental}/status', [AdminRentalController::class, 'updateStatus'])->name('rentals.update-status');
-        Route::get('rentals/{rental}/print', [AdminRentalController::class, 'print'])->name('rentals.print');
-        Route::get('rentals/{rental}/contract', [AdminRentalController::class, 'contract'])->name('rentals.contract');
-        Route::resource('rentals', AdminRentalController::class);
+        Route::patch('rentals/{rental}/status', [RentalController::class, 'updateStatus'])->name('rentals.update-status');
+        Route::get('rentals/{rental}/print', [RentalController::class, 'print'])->name('rentals.print');
+        Route::get('rentals/{rental}/contract', [RentalController::class, 'contract'])->name('rentals.contract');
+        Route::resource('rentals', RentalController::class);
 
         // ✅ Payments
-        Route::get('payments', [AdminPaymentController::class, 'index'])->name('payments.index');
-        Route::get('payments/{payment}', [AdminPaymentController::class, 'show'])->name('payments.show');
+        Route::get('payments', [PaymentController::class, 'index'])->name('payments.index');
+        Route::get('payments/{payment}', [PaymentController::class, 'show'])->name('payments.show');
 
         // ✅ Reports - مرة واحدة فقط
         Route::prefix('reports')->name('reports.')->group(function () {
-            Route::get('/', [AdminReportController::class, 'index'])->name('index');
-            Route::get('/sales', [AdminReportController::class, 'sales'])->name('sales');
-            Route::get('/rentals', [AdminReportController::class, 'rentals'])->name('rentals');
-            Route::get('/users', [AdminReportController::class, 'users'])->name('users');
-            Route::get('/products', [AdminReportController::class, 'products'])->name('products');
-            Route::get('/revenue', [AdminReportController::class, 'revenue'])->name('revenue');
-            Route::get('/financial', [AdminReportController::class, 'financial'])->name('financial');
-            Route::get('/export', [AdminReportController::class, 'export'])->name('export');
+            Route::get('/', [ReportController::class, 'index'])->name('index');
+            Route::get('/sales', [ReportController::class, 'sales'])->name('sales');
+            Route::get('/rentals', [ReportController::class, 'rentals'])->name('rentals');
+            Route::get('/users', [ReportController::class, 'users'])->name('users');
+            Route::get('/products', [ReportController::class, 'products'])->name('products');
+            Route::get('/revenue', [ReportController::class, 'revenue'])->name('revenue');
+            Route::get('/financial', [ReportController::class, 'financial'])->name('financial');
+            Route::get('/export', [ReportController::class, 'export'])->name('export');
         });
 
         // ✅ Logs - مرة واحدة فقط
-        Route::get('logs', [AdminLogController::class, 'index'])->name('logs.index');
-        Route::get('logs/{log}', [AdminLogController::class, 'show'])->name('logs.show');
-        Route::post('logs/clear', [AdminLogController::class, 'clear'])->name('logs.clear');
-        Route::get('logs/export', [AdminLogController::class, 'export'])->name('logs.export');
-        Route::get('logs/stats', [AdminLogController::class, 'stats'])->name('logs.stats');
+        Route::get('logs', [LogController::class, 'index'])->name('logs.index');
+        Route::get('logs/{log}', [LogController::class, 'show'])->name('logs.show');
+        Route::post('logs/clear', [LogController::class, 'clear'])->name('logs.clear');
+        Route::get('logs/export', [LogController::class, 'export'])->name('logs.export');
+        Route::get('logs/stats', [LogController::class, 'stats'])->name('logs.stats');
     });
 
 require __DIR__.'/auth.php';
