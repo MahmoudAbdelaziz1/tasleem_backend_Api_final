@@ -22,7 +22,9 @@ use App\Http\Controllers\Admin\LogController;
 */
 
 // ✅ Home - بـ HomeController
-Route::get('/', [HomeController::class, 'index'])->name('home');
+Route::get('/', function () {
+    return "Railway works";
+});
 
 // Dashboard 
 Route::middleware(['auth', 'verified'])->group(function () {
