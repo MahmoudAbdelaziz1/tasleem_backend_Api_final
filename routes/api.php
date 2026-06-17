@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\ProductImageController;
 use App\Http\Controllers\Api\WalletController;
 use App\Http\Controllers\Api\OfferController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\AdminController;
 
 
 /*
@@ -112,6 +113,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::get('/', [LogController::class, 'index']);                        
         Route::get('/{id}', [LogController::class, 'show']);      
     });
+        Route::middleware('admin')->get('/admin/stats', [AdminController::class, 'stats']);
 });
 
 Route::prefix('v1')->middleware('auth:sanctum')->group(function () {

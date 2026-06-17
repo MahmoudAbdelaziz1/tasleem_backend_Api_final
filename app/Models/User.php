@@ -24,6 +24,7 @@ class User extends Authenticatable
         'address',
         'city',
         'phone',
+        'national_id',
         'user_photo',
         'role',
         'status',

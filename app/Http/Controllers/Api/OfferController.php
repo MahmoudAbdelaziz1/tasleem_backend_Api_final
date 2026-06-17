@@ -42,13 +42,14 @@ class OfferController extends BaseController
     /**
      * إرسال عرض على منتج.
      * POST /api/offers
-     * Body: { "product_id": 1, "amount": 20000 }
+     * Body: { "product_id": 1, "amount": 20000, "payment_method": "cash" }
      */
     public function store(Request $request)
     {
         $request->validate([
-            'product_id' => 'required|exists:products,id',
-            'amount'     => 'required|numeric|min:1',
+            'product_id'     => 'required|exists:products,id',
+            'amount'         => 'required|numeric|min:1',
+            'payment_method' => 'sometimes|in:wallet,cash', // ✅ إضافة
         ]);
 
         $product = Product::findOrFail($request->product_id);
@@ -63,12 +64,29 @@ class OfferController extends BaseController
             return $this->sendError('Offers are only allowed on sale items', null, 400);
         }
 
+        // ✅ قراءة طريقة الدفع (افتراضي: cash)
+        $method = $request->input('payment_method', 'cash');
+
+        // ✅ التحقق من الرصيد فقط إذا كان الدفع بالمحفظة
+        if ($method === 'wallet') {
+            $charge = (float)$request->amount + (float)config('tasleem.delivery_fee');
+            if ((float)auth()->user()->wallet_balance < $charge) {
+                return $this->sendError(
+                    'Not enough wallet balance for a wallet offer — top up or use Cash on Delivery.',
+                    null,
+                    400
+                );
+            }
+        }
+
+        // ✅ حفظ العرض مع طريقة الدفع
         $offer = Offer::create([
-            'product_id' => $product->id,
-            'buyer_id'   => auth()->id(),
-            'seller_id'  => $product->owner_id,
-            'amount'     => $request->amount,
-            'status'     => 'pending',
+            'product_id'     => $product->id,
+            'buyer_id'       => auth()->id(),
+            'seller_id'      => $product->owner_id,
+            'amount'         => $request->amount,
+            'payment_method' => $method, // ✅
+            'status'         => 'pending',
         ]);
 
         // إشعار البائع
@@ -103,32 +121,45 @@ class OfferController extends BaseController
         }
 
         $buyer = User::find($offer->buyer_id);
-        $charge = (float)$offer->amount + (float)config('tasleem.delivery_fee');
 
-        // التحقق من رصيد المشتري
-        if ((float)$buyer->wallet_balance < $charge) {
-            return $this->sendError('Buyer has insufficient funds. Please ask buyer to top up.', null, 400);
+        // ✅ قراءة طريقة الدفع (افتراضي: cash)
+        $method = $offer->payment_method ?? 'cash';
+
+        // ✅ التحقق من الرصيد فقط للمحفظة
+        if ($method === 'wallet') {
+            $charge = (float)$offer->amount + (float)config('tasleem.delivery_fee');
+            if ((float)$buyer->wallet_balance < $charge) {
+                // ✅ Fallback إلى الدفع عند الاستلام بدلاً من الفشل
+                $method = 'cash';
+            }
         }
 
         try {
             // تحديث حالة العرض
             $offer->update(['status' => 'accepted']);
 
-            // إنشاء الطلب باستخدام OrderService (بالحالة confirmed)
+            // ✅ إنشاء الطلب باستخدام OrderService مع طريقة الدفع
             $order = OrderService::placeOrder(
                 $offer->buyer_id,
                 $offer->product_id,
-                1, // الكمية دائماً 1 في العروض
+                1,
                 (float)$offer->amount,
-                'confirmed' // ← مهم جداً: الطلب يبدأ بحالة confirmed
+                'confirmed',
+                $method // ✅ تمرير طريقة الدفع
             );
+
+            // ✅ رسالة إشعار مختلفة حسب طريقة الدفع
+            $charge = (float)$offer->amount + (float)config('tasleem.delivery_fee');
+            $message = $method === 'wallet'
+                ? 'Your offer of EGP ' . number_format($offer->amount, 2) . ' on "' . $order->product->name . '" was accepted. EGP ' . number_format($charge, 2) . ' has been held.'
+                : 'Your offer of EGP ' . number_format($offer->amount, 2) . ' on "' . $order->product->name . '" was accepted. Please pay EGP ' . number_format($charge, 2) . ' upon delivery.';
 
             // إشعار المشتري
             Notify::send(
                 $offer->buyer_id,
                 'offer_accepted',
                 'Your offer was accepted!',
-                'Your offer of EGP ' . number_format($offer->amount, 2) . ' on "' . $offer->product->name . '" was accepted. EGP ' . number_format($charge, 2) . ' has been held.',
+                $message,
                 'order',
                 $order->order_id
             );
@@ -136,7 +167,7 @@ class OfferController extends BaseController
             return $this->sendResponse([
                 'offer' => $offer->fresh(),
                 'order' => $order->load('payment'),
-            ], 'Offer accepted — order created and money held');
+            ], 'Offer accepted — order created' . ($method === 'wallet' ? ' and money held' : ''));
 
         } catch (RuntimeException $e) {
             return $this->sendError($e->getMessage(), null, 400);
@@ -151,7 +182,6 @@ class OfferController extends BaseController
     {
         $offer = Offer::findOrFail($id);
 
-        // التحقق من أن المستخدم هو البائع
         if (auth()->id() !== $offer->seller_id) {
             return $this->sendError('Not your offer', null, 403);
         }
@@ -162,7 +192,6 @@ class OfferController extends BaseController
 
         $offer->update(['status' => 'rejected']);
 
-        // إشعار المشتري
         Notify::send(
             $offer->buyer_id,
             'offer_rejected',

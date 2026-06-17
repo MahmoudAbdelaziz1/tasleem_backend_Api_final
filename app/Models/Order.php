@@ -1,5 +1,4 @@
 <?php
-// app/Models/Order.php
 
 namespace App\Models;
 
@@ -10,65 +9,37 @@ class Order extends Model
 {
     use HasFactory;
 
-    /**
-     * The table associated with the model.
-     *
-     * @var string
-     */
     protected $table = 'orders';
-
-    /**
-     * The primary key associated with the table.
-     *
-     * @var string
-     */
     protected $primaryKey = 'order_id';
 
-    /**
-     * The attributes that are mass assignable.
-     *
-     * @var array<int, string>
-     */
     protected $fillable = [
         'user_id',
         'product_id',
         'quantity',
         'unit_price',
         'total_price',
-        'tasleem_fee',     
-        'delivery_fee',     
+        'tasleem_fee',
+        'delivery_fee',
         'status',
     ];
 
-    /**
-     * The attributes that should be cast.
-     *
-     * @var array<string, string>
-     */
     protected $casts = [
-        'unit_price' => 'decimal:2',
-        'total_price' => 'decimal:2',
-        'tasleem_fee'   => 'decimal:2',   
-        'delivery_fee'  => 'decimal:2',     
+        'unit_price'    => 'decimal:2',
+        'total_price'   => 'decimal:2',
+        'tasleem_fee'   => 'decimal:2',
+        'delivery_fee'  => 'decimal:2',
     ];
-
-    /**
-     * Relationships
-     */
-
 
     public function user()
     {
         return $this->belongsTo(User::class);
     }
 
-
     public function product()
     {
         return $this->belongsTo(Product::class);
     }
 
-    // البائع (من خلال المنتج)
     public function seller()
     {
         return $this->hasOneThrough(
@@ -81,22 +52,15 @@ class Order extends Model
         );
     }
 
-
     public function payment()
     {
         return $this->hasOne(Payment::class, 'order_id', 'order_id');
     }
 
-
     public function review()
     {
         return $this->hasOne(Review::class, 'order_id', 'order_id');
     }
-
-    /**
-     * Accessors & Mutators
-     */
-
 
     public function setQuantityAttribute($value)
     {
@@ -106,34 +70,25 @@ class Order extends Model
         }
     }
 
-  
     public function isShippable()
     {
         return $this->status === 'confirmed';
     }
-
 
     public function isCompleted()
     {
         return $this->status === 'delivered';
     }
 
-    /**
-     * Scopes
-     */
-
-
     public function scopeByUser($query, $userId)
     {
         return $query->where('user_id', $userId);
     }
 
-
     public function scopeForProduct($query, $productId)
     {
         return $query->where('product_id', $productId);
     }
-
 
     public function scopePending($query)
     {
@@ -145,28 +100,32 @@ class Order extends Model
         return $query->where('status', 'delivered');
     }
 
-    /**
-     * Boot method for model events
-     */
     protected static function boot()
     {
         parent::boot();
 
         static::creating(function ($order) {
-          
             $order->total_price = $order->quantity * $order->unit_price;
         });
 
         static::created(function ($order) {
-          
             $order->product->increment('pay_count', $order->quantity);
         });
 
+        // ✅ إرجاع المخزون + تفعيل المنتج لما يتإلغى
         static::updating(function ($order) {
-         
             if ($order->isDirty('status') && $order->status === 'cancelled') {
-         
-                $order->product->increment('quantity', $order->quantity);
+                $product = $order->product;
+                
+                if ($product) {
+                    // رجع الكمية
+                    $product->increment('quantity', $order->quantity);
+                    
+                    // لو المنتج كان "نفذ من المخزون" (status = 0)، رجعه متاح (status = 1)
+                    if ($product->quantity > 0 && $product->status === '0') {
+                        $product->update(['status' => '1']);
+                    }
+                }
             }
         });
     }

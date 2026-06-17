@@ -19,7 +19,8 @@ class OrderController extends BaseController
     public function index(Request $request)
     {
         // ✅ إضافة 'product.owner' للـ eager loading
-        $query = Order::with(['user', 'product.images', 'product.owner', 'payment']);
+        $query = Order::with(['user', 'product.images', 'product.owner', 'payment'])
+            ->orderBy('created_at', 'desc'); 
 
         if ($request->has('user_id')) {
             $query->where('user_id', $request->user_id);
@@ -401,6 +402,7 @@ class OrderController extends BaseController
             return $this->sendError('Too late to cancel', null, 400);
         }
 
+        // استرداد الأموال (إذا كان الدفع بالمحفظة)
         if ($order->payment && $order->payment->status === 'pending') {
             if ($order->payment->payment_method === 'wallet') {
                 WalletService::move(
@@ -419,12 +421,7 @@ class OrderController extends BaseController
 
         $order->update(['status' => 'cancelled']);
 
-        $product = $order->product;
-        $product->increment('quantity', $order->quantity);
-        if ($product->status === '0') {
-            $product->status = '1';
-            $product->save();
-        }
+        // ❌ مسحنا كود إرجاع المخزون من هنا — الـ Model بيعملها تلقائياً
 
         $refundMessage = $order->payment && $order->payment->payment_method === 'wallet'
             ? 'EGP ' . number_format($order->payment->amount ?? 0, 2) . ' returned to your wallet.'
@@ -440,7 +437,7 @@ class OrderController extends BaseController
         );
 
         Notify::send(
-            $product->owner_id,
+            $order->product->owner_id,
             'order_refunded',
             'Order cancelled',
             null,

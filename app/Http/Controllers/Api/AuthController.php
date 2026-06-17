@@ -1,5 +1,4 @@
 <?php
-// app/Http/Controllers/Api/AuthController.php
 
 namespace App\Http\Controllers\Api;
 
@@ -9,18 +8,19 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\RateLimiter; // ← تمت إضافته
-use Illuminate\Support\Str;                 // ← تمت إضافته
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
     public function register(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|regex:/^[^<>{}]*$/|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:8|confirmed',
-            'phone' => 'nullable|regex:/^[^<>{}]*$/|string|max:20',
+            'name'        => 'required|regex:/^[^<>{}]*$/|string|max:255',
+            'email'       => 'required|string|email|max:255|unique:users',
+            'password'    => 'required|string|min:8|confirmed',
+            'phone'       => 'nullable|regex:/^[^<>{}]*$/|string|max:20',
+            'national_id' => 'required|string|max:30|unique:users', // ✅ للمهمة 4
         ]);
 
         if ($validator->fails()) {
@@ -31,12 +31,13 @@ class AuthController extends Controller
         }
 
         $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'phone' => $request->phone,
-            'role' => 'user',
-            'status' => '1',
+            'name'         => $request->name,
+            'email'        => $request->email,
+            'password'     => Hash::make($request->password),
+            'phone'        => $request->phone,
+            'national_id'  => $request->national_id, // ✅ للمهمة 4
+            'role'         => 'user',
+            'status'       => '1',
         ]);
 
         return response()->json([
@@ -52,7 +53,7 @@ class AuthController extends Controller
     public function login(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'email' => 'required|email',
+            'email'    => 'required|email',
             'password' => 'required|regex:/^[^<>{}]*$/|string|min:8',
         ]);
 
@@ -63,12 +64,9 @@ class AuthController extends Controller
             ], 422);
         }
 
-        // ==========================================
-        // 👇 بداية إضافة نظام الحماية (Throttle) 👇
-        // ==========================================
+        // Throttle
         $throttleKey = Str::transliterate(Str::lower($request->input('email')) . '|' . $request->ip());
 
-        // إذا تجاوز 5 محاولات، أرجع كود 429 مع عدد الثواني المتبقية
         if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
             $seconds = RateLimiter::availableIn($throttleKey);
             return response()->json([
@@ -77,26 +75,27 @@ class AuthController extends Controller
                 'seconds_until_available' => $seconds,
             ], 429)->header('Retry-After', $seconds);
         }
-        // ==========================================
-        // 👆 نهاية إضافة نظام الحماية (Throttle) 👆
-        // ==========================================
 
         if (!Auth::attempt($request->only('email', 'password'))) {
-            
-            // 👇 سجل المحاولة الفاشلة (مدة القفل 60 ثانية) 👇
-            RateLimiter::hit($throttleKey, 60); 
-
+            RateLimiter::hit($throttleKey, 60);
             return response()->json([
                 'success' => false,
                 'message' => 'Invalid login credentials'
             ], 401);
         }
 
-        // 👇 إذا نجح تسجيل الدخول، امسح عداد المحاولات 👇
         RateLimiter::clear($throttleKey);
 
         $user = User::where('email', $request->email)->firstOrFail();
-        
+
+        // ✅ التحقق من حالة المستخدم (معطل ولا لا)
+        if ($user->status === '0' || $user->status === 0) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Your account has been deactivated.',
+            ], 403);
+        }
+
         return response()->json([
             'success' => true,
             'data' => [

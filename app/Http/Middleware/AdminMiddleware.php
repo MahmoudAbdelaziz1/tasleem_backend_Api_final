@@ -1,4 +1,5 @@
 <?php
+
 // app/Http/Middleware/AdminMiddleware.php
 
 namespace App\Http\Middleware;
@@ -15,6 +16,9 @@ class AdminMiddleware
             return $next($request);
         }
 
-        return redirect('/')->with('error', 'You Are Not Admin');
+        return response()->json([
+            'success' => false,
+            'message' => 'Admin access required.'
+        ], 403);
     }
 }

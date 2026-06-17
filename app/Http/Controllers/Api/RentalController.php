@@ -1,14 +1,16 @@
 <?php
-// app/Http/Controllers/Api/RentalController.php
 
 namespace App\Http\Controllers\Api;
 
 use App\Models\Rental;
+use App\Models\Product;
+use App\Models\User;
 use App\Http\Resources\RentalResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
-use App\Http\Controllers\Api\LogController; 
+use App\Http\Controllers\Api\LogController;
+use App\Services\WalletService;
 
 class RentalController extends BaseController
 {
@@ -26,7 +28,6 @@ class RentalController extends BaseController
 
         $rentals = $query->paginate($request->get('per_page', 15));
 
-       
         LogController::addLog(
             userId: auth()->id(),
             actionType: 'VIEW',
@@ -51,15 +52,15 @@ class RentalController extends BaseController
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'product_id' => 'required|exists:products,id',
-            'renter_id' => 'required|exists:users,id',
-            'start_date' => 'required|date|after:today',
-            'end_date' => 'required|date|after:start_date',
-            'daily_price' => 'required|numeric|min:0',
+            'product_id'     => 'required|exists:products,id',
+            'renter_id'      => 'required|exists:users,id',
+            'start_date'     => 'required|date|after:today',
+            'end_date'       => 'required|date|after:start_date',
+            'daily_price'    => 'required|numeric|min:0',
+            'payment_method' => 'sometimes|in:wallet,cash',
         ]);
 
         if ($validator->fails()) {
-          
             LogController::addLog(
                 userId: auth()->id() ?? $request->renter_id,
                 actionType: 'ERROR',
@@ -87,7 +88,6 @@ class RentalController extends BaseController
             ->exists();
 
         if ($conflictingRental) {
-          
             LogController::addLog(
                 userId: auth()->id() ?? $request->renter_id,
                 actionType: 'ERROR',
@@ -108,19 +108,44 @@ class RentalController extends BaseController
         $start = Carbon::parse($request->start_date);
         $end = Carbon::parse($request->end_date);
         $days = $start->diffInDays($end) + 1;
+        $total = $request->daily_price * $days;
+
+        $paymentMethod = $request->input('payment_method', 'cash');
+
+        if ($paymentMethod === 'wallet') {
+            $charge = (float) $total + (float) config('tasleem.delivery_fee');
+            $renter = User::find($request->renter_id);
+
+            if ((float) $renter->wallet_balance < $charge) {
+                return $this->sendError(
+                    'Not enough wallet balance — top up or use Cash on Delivery.',
+                    null,
+                    400
+                );
+            }
+
+            WalletService::move(
+                $renter,
+                'rental_hold',
+                $charge,
+                'rental',
+                null,
+                'Rental escrow for product #' . $request->product_id
+            );
+        }
 
         $rental = Rental::create([
-            'product_id' => $request->product_id,
-            'renter_id' => $request->renter_id,
-            'start_date' => $request->start_date,
-            'end_date' => $request->end_date,
-            'daily_price' => $request->daily_price,
-            'total_days' => $days,
-            'total_price' => $request->daily_price * $days,
-            'status' => 'pending',
+            'product_id'     => $request->product_id,
+            'renter_id'      => $request->renter_id,
+            'start_date'     => $request->start_date,
+            'end_date'       => $request->end_date,
+            'daily_price'    => $request->daily_price,
+            'total_days'     => $days,
+            'total_price'    => $total,
+            'payment_method' => $paymentMethod,
+            'status'         => 'pending',
         ]);
 
-       
         LogController::addLog(
             userId: $rental->renter_id,
             actionType: 'CREATE',
@@ -132,7 +157,7 @@ class RentalController extends BaseController
             ipAddress: $request->ip(),
             userAgent: $request->userAgent(),
             status: 'success',
-            message: 'Rental created: #' . $rental->id . ' for product: ' . ($rental->product->name ?? 'Unknown') . ' (' . $days . ' days)'
+            message: 'Rental created: #' . $rental->id . ' for product: ' . ($rental->product->name ?? 'Unknown') . ' (' . $days . ' days, ' . $paymentMethod . ')'
         );
 
         return $this->sendResponse(
@@ -142,12 +167,11 @@ class RentalController extends BaseController
         );
     }
 
-    public function show($id)
+    public function show(int $id) // ✅ int
     {
         $rental = Rental::with(['product', 'renter', 'payment'])->find($id);
 
         if (!$rental) {
-            
             LogController::addLog(
                 userId: auth()->id(),
                 actionType: 'ERROR',
@@ -164,7 +188,6 @@ class RentalController extends BaseController
             );
             return $this->sendError('Rental not found');
         }
-
 
         LogController::addLog(
             userId: auth()->id(),
@@ -186,12 +209,11 @@ class RentalController extends BaseController
         );
     }
 
-    public function update(Request $request, $id)
+    public function update(Request $request, int $id) // ✅ int
     {
         $rental = Rental::find($id);
 
         if (!$rental) {
-            
             LogController::addLog(
                 userId: auth()->id(),
                 actionType: 'ERROR',
@@ -214,7 +236,6 @@ class RentalController extends BaseController
         ]);
 
         if ($validator->fails()) {
-          
             LogController::addLog(
                 userId: auth()->id(),
                 actionType: 'ERROR',
@@ -235,7 +256,6 @@ class RentalController extends BaseController
         $oldData = $rental->toArray();
         $rental->update($request->only('status'));
 
-        
         LogController::addLog(
             userId: auth()->id(),
             actionType: 'UPDATE',
@@ -256,12 +276,11 @@ class RentalController extends BaseController
         );
     }
 
-    public function destroy($id)
+    public function destroy(int $id) // ✅ int
     {
         $rental = Rental::find($id);
 
         if (!$rental) {
-           
             LogController::addLog(
                 userId: auth()->id(),
                 actionType: 'ERROR',
@@ -280,7 +299,6 @@ class RentalController extends BaseController
         }
 
         if ($rental->status !== 'pending') {
-           
             LogController::addLog(
                 userId: auth()->id(),
                 actionType: 'ERROR',
@@ -301,7 +319,6 @@ class RentalController extends BaseController
         $oldData = $rental->toArray();
         $rental->delete();
 
-     
         LogController::addLog(
             userId: auth()->id(),
             actionType: 'DELETE',
