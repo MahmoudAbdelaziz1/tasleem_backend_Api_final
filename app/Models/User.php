@@ -29,7 +29,9 @@ class User extends Authenticatable
         'role',
         'status',
         'post_code',
-        'wallet_balance'
+        'wallet_balance',
+        'free_sales_remaining' 
+
     ];
 
     /**

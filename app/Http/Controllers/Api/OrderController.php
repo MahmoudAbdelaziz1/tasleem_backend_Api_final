@@ -22,6 +22,11 @@ class OrderController extends BaseController
         $query = Order::with(['user', 'product.images', 'product.owner', 'payment'])
             ->orderBy('created_at', 'desc'); 
 
+        // ✅ إضافة فلتر seller_id (المهمة 1)
+        if ($request->filled('seller_id')) {
+            $query->whereHas('product', fn ($q) => $q->where('owner_id', $request->seller_id));
+        }
+
         if ($request->has('user_id')) {
             $query->where('user_id', $request->user_id);
         }
@@ -39,7 +44,7 @@ class OrderController extends BaseController
             module: 'orders',
             entityId: null,
             oldData: null,
-            newData: ['filters' => $request->only(['user_id', 'status'])],
+            newData: ['filters' => $request->only(['user_id', 'status', 'seller_id'])], // ✅ أضفنا seller_id للـ log
             ipAddress: $request->ip(),
             userAgent: $request->userAgent(),
             status: 'success',
@@ -319,7 +324,7 @@ class OrderController extends BaseController
 
     public function complete($id)
     {
-        $order = \App\Models\Order::with('product', 'payment')->find($id);
+        $order = \App\Models\Order::with('product.owner', 'payment')->find($id);
 
         if (!$order) {
             return $this->sendError('Order not found', null, 404);
@@ -343,7 +348,13 @@ class OrderController extends BaseController
         $sellerId = $order->product->owner_id;
         $seller   = \App\Models\User::find($sellerId);
 
-        $payout = (float) $order->total_price - (float) $order->tasleem_fee;
+        // ✅ التحقق من وجود رصيد مجاني للبائع
+        $waive = $seller->role !== 'admin' && $seller->free_sales_remaining > 0;
+        
+        // ✅ حساب المبلغ المستحق للبائع
+        $payout = $waive 
+            ? (float) $order->total_price  // لو مجاني، البائع ياخد الفلوس كاملة
+            : (float) $order->total_price - (float) $order->tasleemFee;
 
         WalletService::move(
             $seller,
@@ -354,6 +365,12 @@ class OrderController extends BaseController
             'Escrow released for order #' . $order->id
         );
 
+        // ✅ لو كان مجاني، خصم 1 من الرصيد المجاني وتحديث fee = 0
+        if ($waive) {
+            $seller->decrement('free_sales_remaining');
+            $order->update(['tasleem_fee' => 0]);
+        }
+
         $order->payment->update(['status' => 'completed']);
         $order->update(['status' => 'delivered']);
 
@@ -361,7 +378,7 @@ class OrderController extends BaseController
             $sellerId,
             'order_completed',
             'You got paid',
-            'EGP ' . number_format($payout, 2) . ' added to your wallet.',
+            'EGP ' . number_format($payout, 2) . ' added to your wallet.' . ($waive ? ' (First 2 sales fee-free!)' : ''),
             'order',
             $order->id
         );
@@ -375,12 +392,11 @@ class OrderController extends BaseController
             $order->id
         );
 
-        // ✅ إضافة 'product.owner' للـ load
         return $this->sendResponse(
             new \App\Http\Resources\OrderResource($order->fresh()->load('user', 'product.images', 'product.owner', 'payment')),
             'Order completed and seller paid'
         );
-    }    
+    }
 
     public function cancel($id)
     {

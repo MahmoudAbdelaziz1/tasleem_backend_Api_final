@@ -39,6 +39,9 @@ class Rental extends Model
         'daily_price',
         'total_days',
         'total_price',
+        'payment_method',      
+        'tasleem_fee',         
+        'delivery_fee',      
         'status',
     ];
 

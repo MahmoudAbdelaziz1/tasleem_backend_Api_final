@@ -5,24 +5,32 @@ namespace App\Http\Controllers\Api;
 use App\Models\Rental;
 use App\Models\Product;
 use App\Models\User;
+use App\Models\Payment;
 use App\Http\Resources\RentalResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 use App\Http\Controllers\Api\LogController;
 use App\Services\WalletService;
+use App\Services\Notify;
 
 class RentalController extends BaseController
 {
     public function index(Request $request)
     {
-        $query = Rental::with(['product', 'renter']);
+        // ✅ eager-load product.owner
+        $query = Rental::with(['product.owner', 'renter']);
 
-        if ($request->has('renter_id')) {
-            $query->where('renter_id', $request->renter_id);
+        if ($request->filled('renter_id')) {
+            $query->where('renter_id', $request->renter_id); // My Rentals
         }
 
-        if ($request->has('status')) {
+        // ✅ فلتر owner_id - My Sales → Rentals
+        if ($request->filled('owner_id')) {
+            $query->whereHas('product', fn($q) => $q->where('owner_id', $request->owner_id));
+        }
+
+        if ($request->filled('status')) {
             $query->where('status', $request->status);
         }
 
@@ -35,7 +43,7 @@ class RentalController extends BaseController
             module: 'rentals',
             entityId: null,
             oldData: null,
-            newData: ['filters' => $request->only(['renter_id', 'status'])],
+            newData: ['filters' => $request->only(['renter_id', 'owner_id', 'status'])],
             ipAddress: $request->ip(),
             userAgent: $request->userAgent(),
             status: 'success',
@@ -88,33 +96,23 @@ class RentalController extends BaseController
             ->exists();
 
         if ($conflictingRental) {
-            LogController::addLog(
-                userId: auth()->id() ?? $request->renter_id,
-                actionType: 'ERROR',
-                actionName: 'rental_create_failed',
-                module: 'rentals',
-                entityId: $request->product_id,
-                oldData: null,
-                newData: ['start_date' => $request->start_date, 'end_date' => $request->end_date],
-                ipAddress: $request->ip(),
-                userAgent: $request->userAgent(),
-                status: 'failed',
-                message: 'Product not available for selected dates',
-                errorCode: 400
-            );
             return $this->sendError('Product not available for selected dates');
         }
 
         $start = Carbon::parse($request->start_date);
         $end = Carbon::parse($request->end_date);
         $days = $start->diffInDays($end) + 1;
-        $total = $request->daily_price * $days;
+        $dailyPrice = (float) $request->daily_price;
+        $rent = $dailyPrice * $days;
+        $deliveryFee = (float) config('tasleem.delivery_fee');
+        $tasleemFee = round($rent * (float) config('tasleem.commission_rate'), 2);
 
         $paymentMethod = $request->input('payment_method', 'cash');
+        $renter = User::find($request->renter_id);
 
+        // ✅ حجز الأموال من المحفظة
         if ($paymentMethod === 'wallet') {
-            $charge = (float) $total + (float) config('tasleem.delivery_fee');
-            $renter = User::find($request->renter_id);
+            $charge = $rent + $deliveryFee;
 
             if ((float) $renter->wallet_balance < $charge) {
                 return $this->sendError(
@@ -124,10 +122,11 @@ class RentalController extends BaseController
                 );
             }
 
+            // ✅ خصم المبلغ (hold)
             WalletService::move(
                 $renter,
-                'rental_hold',
-                $charge,
+                'hold',
+                -$charge, // ✅ سالب عشان خصم
                 'rental',
                 null,
                 'Rental escrow for product #' . $request->product_id
@@ -139,9 +138,31 @@ class RentalController extends BaseController
             'renter_id'      => $request->renter_id,
             'start_date'     => $request->start_date,
             'end_date'       => $request->end_date,
-            'daily_price'    => $request->daily_price,
+            'daily_price'    => $dailyPrice,
             'total_days'     => $days,
-            'total_price'    => $total,
+            'total_price'    => $rent,
+            'payment_method' => $paymentMethod,
+            'tasleem_fee'    => $tasleemFee,
+            'delivery_fee'   => $deliveryFee,
+            'status'         => 'pending',
+        ]);
+
+        // ✅ تحديث ref_id للمعاملة
+        if ($paymentMethod === 'wallet') {
+            $renter->walletTransactions()
+                ->where('ref_type', 'rental')
+                ->whereNull('ref_id')
+                ->latest()
+                ->first()
+                ?->update(['ref_id' => $rental->rental_id]);
+        }
+
+        // ✅ إنشاء سجل الدفع
+        Payment::create([
+            'order_id'       => null,
+            'rental_id'      => $rental->rental_id,
+            'user_id'        => $renter->id,
+            'amount'         => $rent + $deliveryFee,
             'payment_method' => $paymentMethod,
             'status'         => 'pending',
         ]);
@@ -151,41 +172,37 @@ class RentalController extends BaseController
             actionType: 'CREATE',
             actionName: 'rental_create',
             module: 'rentals',
-            entityId: $rental->id,
+            entityId: $rental->rental_id,
             oldData: null,
             newData: $rental->toArray(),
             ipAddress: $request->ip(),
             userAgent: $request->userAgent(),
             status: 'success',
-            message: 'Rental created: #' . $rental->id . ' for product: ' . ($rental->product->name ?? 'Unknown') . ' (' . $days . ' days, ' . $paymentMethod . ')'
+            message: 'Rental created: #' . $rental->rental_id . ' for product: ' . ($rental->product->name ?? 'Unknown') . ' (' . $days . ' days, ' . $paymentMethod . ')'
+        );
+
+        // ✅ إشعار المالك
+        Notify::send(
+            $rental->product->owner_id,
+            'rental_requested',
+            'New rental request',
+            'Someone wants to rent "' . $rental->product->name . '" for ' . $days . ' days.',
+            'rental',
+            $rental->rental_id
         );
 
         return $this->sendResponse(
-            new RentalResource($rental->load(['product', 'renter'])),
+            new RentalResource($rental->load(['product.owner', 'renter', 'payment'])),
             'Rental created successfully',
             201
         );
     }
 
-    public function show(int $id) // ✅ int
+    public function show(int $id)
     {
-        $rental = Rental::with(['product', 'renter', 'payment'])->find($id);
+        $rental = Rental::with(['product.owner', 'renter', 'payment'])->find($id);
 
         if (!$rental) {
-            LogController::addLog(
-                userId: auth()->id(),
-                actionType: 'ERROR',
-                actionName: 'rental_not_found',
-                module: 'rentals',
-                entityId: $id,
-                oldData: null,
-                newData: null,
-                ipAddress: request()->ip(),
-                userAgent: request()->userAgent(),
-                status: 'failed',
-                message: 'Attempted to view non-existent rental #' . $id,
-                errorCode: 404
-            );
             return $this->sendError('Rental not found');
         }
 
@@ -194,13 +211,13 @@ class RentalController extends BaseController
             actionType: 'VIEW',
             actionName: 'view_rental_details',
             module: 'rentals',
-            entityId: $rental->id,
+            entityId: $rental->rental_id,
             oldData: null,
             newData: null,
             ipAddress: request()->ip(),
             userAgent: request()->userAgent(),
             status: 'success',
-            message: 'User viewed rental #' . $rental->id
+            message: 'User viewed rental #' . $rental->rental_id
         );
 
         return $this->sendResponse(
@@ -209,25 +226,11 @@ class RentalController extends BaseController
         );
     }
 
-    public function update(Request $request, int $id) // ✅ int
+    public function update(Request $request, int $id)
     {
         $rental = Rental::find($id);
 
         if (!$rental) {
-            LogController::addLog(
-                userId: auth()->id(),
-                actionType: 'ERROR',
-                actionName: 'rental_update_failed',
-                module: 'rentals',
-                entityId: $id,
-                oldData: null,
-                newData: null,
-                ipAddress: $request->ip(),
-                userAgent: $request->userAgent(),
-                status: 'failed',
-                message: 'Attempted to update non-existent rental #' . $id,
-                errorCode: 404
-            );
             return $this->sendError('Rental not found');
         }
 
@@ -236,20 +239,6 @@ class RentalController extends BaseController
         ]);
 
         if ($validator->fails()) {
-            LogController::addLog(
-                userId: auth()->id(),
-                actionType: 'ERROR',
-                actionName: 'rental_update_validation_failed',
-                module: 'rentals',
-                entityId: $rental->id,
-                oldData: null,
-                newData: $request->all(),
-                ipAddress: $request->ip(),
-                userAgent: $request->userAgent(),
-                status: 'failed',
-                message: 'Validation failed: ' . json_encode($validator->errors()),
-                errorCode: 422
-            );
             return $this->sendError('Validation Error', $validator->errors(), 422);
         }
 
@@ -261,13 +250,13 @@ class RentalController extends BaseController
             actionType: 'UPDATE',
             actionName: 'rental_update',
             module: 'rentals',
-            entityId: $rental->id,
+            entityId: $rental->rental_id,
             oldData: $oldData,
             newData: $rental->fresh()->toArray(),
             ipAddress: $request->ip(),
             userAgent: $request->userAgent(),
             status: 'success',
-            message: 'Rental #' . $rental->id . ' status updated to: ' . $rental->status
+            message: 'Rental #' . $rental->rental_id . ' status updated to: ' . $rental->status
         );
 
         return $this->sendResponse(
@@ -276,43 +265,15 @@ class RentalController extends BaseController
         );
     }
 
-    public function destroy(int $id) // ✅ int
+    public function destroy(int $id)
     {
         $rental = Rental::find($id);
 
         if (!$rental) {
-            LogController::addLog(
-                userId: auth()->id(),
-                actionType: 'ERROR',
-                actionName: 'rental_delete_failed',
-                module: 'rentals',
-                entityId: $id,
-                oldData: null,
-                newData: null,
-                ipAddress: request()->ip(),
-                userAgent: request()->userAgent(),
-                status: 'failed',
-                message: 'Attempted to delete non-existent rental #' . $id,
-                errorCode: 404
-            );
             return $this->sendError('Rental not found');
         }
 
         if ($rental->status !== 'pending') {
-            LogController::addLog(
-                userId: auth()->id(),
-                actionType: 'ERROR',
-                actionName: 'rental_delete_failed',
-                module: 'rentals',
-                entityId: $rental->id,
-                oldData: null,
-                newData: ['status' => $rental->status],
-                ipAddress: request()->ip(),
-                userAgent: request()->userAgent(),
-                status: 'failed',
-                message: 'Cannot delete rental #' . $rental->id . ' with status: ' . $rental->status,
-                errorCode: 400
-            );
             return $this->sendError('Cannot delete rental that is not pending');
         }
 
@@ -334,5 +295,175 @@ class RentalController extends BaseController
         );
 
         return $this->sendResponse(null, 'Rental deleted successfully');
+    }
+
+    // ✅ المالك/الأدمن يوافق على الإيجار
+    public function confirm(int $id)
+    {
+        $rental = Rental::with('product')->find($id);
+
+        if (!$rental) {
+            return $this->sendError('Rental not found', null, 404);
+        }
+
+        /** @var \App\Models\User $currentUser */
+        $currentUser = auth()->user();
+        
+        // التحقق من الصلاحية (المالك أو الأدمن)
+        if (auth()->id() !== $rental->product->owner_id && !$currentUser->isAdmin()) {
+            return $this->sendError('Unauthorized', null, 403);
+        }
+
+        if ($rental->status !== 'pending') {
+            return $this->sendError('Rental already handled', null, 400);
+        }
+
+        $rental->update(['status' => 'confirmed']);
+
+        Notify::send(
+            $rental->renter_id,
+            'rental_confirmed',
+            'Rental confirmed',
+            'Your rental for "' . $rental->product->name . '" has been confirmed.',
+            'rental',
+            $rental->rental_id
+        );
+
+        return $this->sendResponse(
+            new RentalResource($rental->load(['product.owner', 'renter'])),
+            'Rental confirmed'
+        );
+    }
+
+    // ✅ إتمام الإيجار وصرف الفلوس للمالك
+    public function complete(int $id)
+    {
+        $rental = Rental::with(['product', 'payment'])->find($id);
+
+        if (!$rental) {
+            return $this->sendError('Rental not found', null, 404);
+        }
+
+        /** @var \App\Models\User $currentUser */
+        $currentUser = auth()->user();
+        
+        // التحقق من الصلاحية (الأدمن فقط)
+        if (!$currentUser->isAdmin()) {
+            return $this->sendError('Admin only', null, 403);
+        }
+
+        if (!in_array($rental->status, ['confirmed', 'active'])) {
+            return $this->sendError('Rental is not confirmed or active', null, 400);
+        }
+
+        if (!$rental->payment || $rental->payment->status !== 'pending') {
+            return $this->sendError('Nothing to release', null, 400);
+        }
+
+        $owner = User::find($rental->product->owner_id);
+        $payout = (float) $rental->total_price - (float) $rental->tasleem_fee;
+
+        // ✅ صرف الفلوس للمالك
+        WalletService::move(
+            $owner,
+            'release',
+            $payout,
+            'rental',
+            $rental->rental_id,
+            'Rental payment released for rental #' . $rental->rental_id
+        );
+
+        $rental->payment->update(['status' => 'completed']);
+        $rental->update(['status' => 'completed']);
+
+        Notify::send(
+            $owner->id,
+            'rental_completed',
+            'You got paid',
+            'EGP ' . number_format($payout, 2) . ' added to your wallet for rental #' . $rental->rental_id,
+            'rental',
+            $rental->rental_id
+        );
+
+        Notify::send(
+            $rental->renter_id,
+            'rental_completed',
+            'Rental complete',
+            'Your rental for "' . $rental->product->name . '" is complete.',
+            'rental',
+            $rental->rental_id
+        );
+
+        return $this->sendResponse(
+            new RentalResource($rental->load(['product.owner', 'renter', 'payment'])),
+            'Rental completed and owner paid'
+        );
+    }
+
+    // ✅ إلغاء الإيجار واسترداد الفلوس
+    public function cancel(int $id)
+    {
+        $rental = Rental::with(['product', 'payment'])->find($id);
+
+        if (!$rental) {
+            return $this->sendError('Rental not found', null, 404);
+        }
+
+        /** @var \App\Models\User $currentUser */
+        $currentUser = auth()->user();
+        
+        // التحقق من الصلاحية (المستأجر أو الأدمن)
+        $isRenterOrAdmin = auth()->id() === $rental->renter_id || $currentUser->isAdmin();
+
+        if (!$isRenterOrAdmin) {
+            return $this->sendError('Unauthorized', null, 403);
+        }
+
+        if (!in_array($rental->status, ['pending', 'confirmed'])) {
+            return $this->sendError('Too late to cancel', null, 400);
+        }
+
+        // ✅ استرداد الفلوس (لو كان الدفع بالمحفظة)
+        if ($rental->payment && $rental->payment->status === 'pending') {
+            if ($rental->payment->payment_method === 'wallet') {
+                WalletService::move(
+                    User::find($rental->renter_id),
+                    'refund',
+                    (float) $rental->payment->amount,
+                    'rental',
+                    $rental->rental_id,
+                    'Rental cancelled — refund'
+                );
+                $rental->payment->update(['status' => 'refunded']);
+            } else {
+                $rental->payment->update(['status' => 'cancelled']);
+            }
+        }
+
+        $rental->update(['status' => 'cancelled']);
+
+        $refundMessage = $rental->payment && $rental->payment->payment_method === 'wallet'
+            ? 'EGP ' . number_format($rental->payment->amount ?? 0, 2) . ' returned to your wallet.'
+            : 'Your rental has been cancelled.';
+
+        Notify::send(
+            $rental->renter_id,
+            'rental_cancelled',
+            'Rental cancelled',
+            $refundMessage,
+            'rental',
+            $rental->rental_id
+        );
+
+        Notify::send(
+            $rental->product->owner_id,
+            'rental_cancelled',
+            'Rental cancelled',
+            null,
+            'rental',
+            $rental->rental_id
+        );
+
+        return $this->sendResponse(null, 'Rental cancelled');
     }
 }

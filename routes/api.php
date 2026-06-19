@@ -73,6 +73,11 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     
     // Rentals
     Route::apiResource('rentals', RentalController::class);
+    // Rentals
+    Route::apiResource('rentals', RentalController::class);
+    Route::post('rentals/{id}/confirm', [RentalController::class, 'confirm']);
+    Route::post('rentals/{id}/complete', [RentalController::class, 'complete'])->middleware('admin');
+    Route::post('rentals/{id}/cancel', [RentalController::class, 'cancel']);
     
     // Reviews
     Route::apiResource('reviews', ReviewController::class)->except(['index', 'show']);

@@ -29,7 +29,7 @@ class OrderService
         int $quantity,
         float $unitPrice,
         string $status = 'pending',
-        string $paymentMethod = 'wallet' // ✅ معامل جديد
+        string $paymentMethod = 'wallet'
     ): Order {
         
         return DB::transaction(function () use ($buyerId, $productId, $quantity, $unitPrice, $status, $paymentMethod) {
@@ -48,7 +48,15 @@ class OrderService
             $itemTotal   = $quantity * $unitPrice;
             $deliveryFee = (float)config('tasleem.delivery_fee');
             $buyerCharge = $itemTotal + $deliveryFee;
-            $tasleemFee  = round($itemTotal * (float)config('tasleem.commission_rate'), 2);
+            
+            // ✅ حساب عمولة تسليط - لو البائع لسه عنده مبيعات مجانية، العمولة = 0
+            $seller = $product->owner;
+            $sellerIsAdmin = $seller->role === 'admin';
+            $hasFreeSales = !$sellerIsAdmin && $seller->free_sales_remaining > 0;
+            
+            $tasleemFee = $hasFreeSales 
+                ? 0 
+                : round($itemTotal * (float)config('tasleem.commission_rate'), 2);
 
             // ✅ التحقق من الرصيد وحجز الأموال فقط إذا كان الدفع بالمحفظة
             if ($paymentMethod === 'wallet') {
@@ -62,7 +70,7 @@ class OrderService
                     'hold',
                     -$buyerCharge,
                     'order',
-                    null, // سيتم تحديثه بمعرف الطلب بعد الإنشاء
+                    null,
                     'Order payment held'
                 );
             }
@@ -95,7 +103,7 @@ class OrderService
                 'rental_id'      => null,              
                 'user_id'        => $buyerId,
                 'amount'         => $buyerCharge,
-                'payment_method' => $paymentMethod, // ✅ استخدام طريقة الدفع المحددة
+                'payment_method' => $paymentMethod,
                 'status'         => 'pending',
             ]);
 
@@ -104,7 +112,7 @@ class OrderService
 
             // إذا نفد المخزون، تغيير حالة المنتج
             if ($product->quantity <= 0) {
-                $product->update(['status' => '0']); // 0 = sold out
+                $product->update(['status' => '0']);
             }
 
             // إرسال إشعار للبائع
