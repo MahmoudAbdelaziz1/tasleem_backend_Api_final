@@ -24,7 +24,8 @@ class LogController extends BaseController
         $userAgent = null,
         $status = 'success',
         $message = null,
-        $errorCode = null
+        $errorCode = null,
+        $macAddress = null        
     ) {
         try {
             return Log::create([
@@ -37,6 +38,7 @@ class LogController extends BaseController
                 'old_data' => $oldData ? (is_array($oldData) ? json_encode($oldData) : $oldData) : null,
                 'new_data' => $newData ? (is_array($newData) ? json_encode($newData) : $newData) : null,
                 'ip_address' => $ipAddress,
+                'mac_address' => $macAddress,  
                 'user_agent' => $userAgent,
                 'status' => $status,
                 'message' => $message,
