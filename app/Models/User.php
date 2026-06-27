@@ -30,7 +30,8 @@ class User extends Authenticatable
         'status',
         'post_code',
         'wallet_balance',
-        'free_sales_remaining' 
+        'free_sales_remaining',
+        'completed_sales'
 
     ];
 
@@ -53,6 +54,7 @@ class User extends Authenticatable
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
          'wallet_balance' => 'decimal:2',
+         'completed_sales' => 'integer',  
     ];
 
     /**

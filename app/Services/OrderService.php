@@ -49,16 +49,17 @@ class OrderService
             $deliveryFee = (float)config('tasleem.delivery_fee');
             $buyerCharge = $itemTotal + $deliveryFee;
             
-            // ✅ حساب عمولة تسليط - لو البائع لسه عنده مبيعات مجانية، العمولة = 0
+            // ✅ حساب عمولة تسليط
             $seller = $product->owner;
             $sellerIsAdmin = $seller->role === 'admin';
             $hasFreeSales = !$sellerIsAdmin && $seller->free_sales_remaining > 0;
             
-            $tasleemFee = $hasFreeSales 
+            // ✅ التعديل #3: لو البائع هو admin، العمولة = 0
+            $tasleemFee = ($sellerIsAdmin || $hasFreeSales) 
                 ? 0 
                 : round($itemTotal * (float)config('tasleem.commission_rate'), 2);
 
-            // ✅ التحقق من الرصيد وحجز الأموال فقط إذا كان الدفع بالمحفظة
+            // التحقق من الرصيد وحجز الأموال فقط إذا كان الدفع بالمحفظة
             if ($paymentMethod === 'wallet') {
                 if ($buyer->wallet_balance < $buyerCharge) {
                     throw new RuntimeException('Insufficient wallet balance');
@@ -87,7 +88,7 @@ class OrderService
                 'status'        => $status,
             ]);
 
-            // ✅ تحديث ref_id للمعاملة فقط إذا كان الدفع بالمحفظة
+            // تحديث ref_id للمعاملة فقط إذا كان الدفع بالمحفظة
             if ($paymentMethod === 'wallet') {
                 $buyer->walletTransactions()
                     ->where('ref_type', 'order')
@@ -97,7 +98,7 @@ class OrderService
                     ?->update(['ref_id' => $order->order_id]);
             }
 
-            // ✅ إنشاء سجل الدفع بطريقة الدفع المحددة
+            // إنشاء سجل الدفع بطريقة الدفع المحددة
             Payment::create([
                 'order_id'       => $order->order_id, 
                 'rental_id'      => null,              

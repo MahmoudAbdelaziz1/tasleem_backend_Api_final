@@ -18,11 +18,9 @@ class OrderController extends BaseController
 {
     public function index(Request $request)
     {
-        // ✅ إضافة 'product.owner' للـ eager loading
         $query = Order::with(['user', 'product.images', 'product.owner', 'payment'])
             ->orderBy('created_at', 'desc'); 
 
-        // ✅ إضافة فلتر seller_id (المهمة 1)
         if ($request->filled('seller_id')) {
             $query->whereHas('product', fn ($q) => $q->where('owner_id', $request->seller_id));
         }
@@ -44,7 +42,7 @@ class OrderController extends BaseController
             module: 'orders',
             entityId: null,
             oldData: null,
-            newData: ['filters' => $request->only(['user_id', 'status', 'seller_id'])], // ✅ أضفنا seller_id للـ log
+            newData: ['filters' => $request->only(['user_id', 'status', 'seller_id'])],
             ipAddress: $request->ip(),
             userAgent: $request->userAgent(),
             status: 'success',
@@ -89,7 +87,8 @@ class OrderController extends BaseController
                 actionType: 'CREATE',
                 actionName: 'order_created',
                 module: 'orders',
-                entityId: $order->id,
+                // ✅ التعديل: $order->id → $order->order_id
+                entityId: $order->order_id,
                 oldData: null,
                 newData: $order->toArray(),
                 ipAddress: $request->ip(),
@@ -98,7 +97,6 @@ class OrderController extends BaseController
                 message: 'Order #' . $order->order_id . ' created with payment method: ' . $paymentMethod
             );
 
-            // ✅ إضافة 'product.owner' للـ load
             return $this->sendResponse(
                 new \App\Http\Resources\OrderResource($order->load('product.images', 'product.owner', 'payment')),
                 'Order placed successfully. Awaiting seller confirmation.',
@@ -112,7 +110,6 @@ class OrderController extends BaseController
 
     public function show($id)
     {
-        // ✅ إضافة 'product.owner' للـ eager loading
         $order = Order::with(['user', 'product.images', 'product.owner', 'payment'])->find($id);
 
         if (!$order) {
@@ -121,6 +118,7 @@ class OrderController extends BaseController
                 actionType: 'ERROR',
                 actionName: 'order_not_found',
                 module: 'orders',
+                // ✅ التعديل: $id → $id (هذا صحيح لأنه parameter)
                 entityId: $id,
                 oldData: null,
                 newData: null,
@@ -138,13 +136,14 @@ class OrderController extends BaseController
             actionType: 'VIEW',
             actionName: 'view_order_details',
             module: 'orders',
-            entityId: $order->id,
+            // ✅ التعديل: $order->id → $order->order_id
+            entityId: $order->order_id,
             oldData: null,
             newData: null,
             ipAddress: request()->ip(),
             userAgent: request()->userAgent(),
             status: 'success',
-            message: 'User viewed order #' . $order->id
+            message: 'User viewed order #' . $order->order_id
         );
 
         return $this->sendResponse(
@@ -187,7 +186,8 @@ class OrderController extends BaseController
                 actionType: 'ERROR',
                 actionName: 'order_update_validation_failed',
                 module: 'orders',
-                entityId: $order->id,
+                // ✅ التعديل: $order->id → $order->order_id
+                entityId: $order->order_id,
                 oldData: null,
                 newData: $request->all(),
                 ipAddress: $request->ip(),
@@ -213,13 +213,14 @@ class OrderController extends BaseController
             actionType: 'UPDATE',
             actionName: 'order_update',
             module: 'orders',
-            entityId: $order->id,
+            // ✅ التعديل: $order->id → $order->order_id
+            entityId: $order->order_id,
             oldData: $oldData,
             newData: $order->fresh()->toArray(),
             ipAddress: $request->ip(),
             userAgent: $request->userAgent(),
             status: 'success',
-            message: 'Order #' . $order->id . ' updated'
+            message: 'Order #' . $order->order_id . ' updated'
         );
 
         return $this->sendResponse(
@@ -256,13 +257,14 @@ class OrderController extends BaseController
                 actionType: 'ERROR',
                 actionName: 'order_delete_failed',
                 module: 'orders',
-                entityId: $order->id,
+                // ✅ التعديل: $order->id → $order->order_id
+                entityId: $order->order_id,
                 oldData: null,
                 newData: ['status' => $order->status],
                 ipAddress: request()->ip(),
                 userAgent: request()->userAgent(),
                 status: 'failed',
-                message: 'Cannot delete order #' . $order->id . ' with status: ' . $order->status,
+                message: 'Cannot delete order #' . $order->order_id . ' with status: ' . $order->status,
                 errorCode: 400
             );
             return $this->sendError('Cannot delete order that is not pending');
@@ -312,10 +314,10 @@ class OrderController extends BaseController
             'Seller confirmed',
             'Your order is confirmed — Tasleem is processing it.',
             'order',
-            $order->id
+            // ✅ التعديل: $order->id → $order->order_id
+            $order->order_id
         );
 
-        // ✅ إضافة 'product.owner' للـ load
         return $this->sendResponse(
             new \App\Http\Resources\OrderResource($order->fresh()->load('user', 'product.images', 'product.owner', 'payment')),
             'Order confirmed by seller'
@@ -348,27 +350,31 @@ class OrderController extends BaseController
         $sellerId = $order->product->owner_id;
         $seller   = \App\Models\User::find($sellerId);
 
-        // ✅ التحقق من وجود رصيد مجاني للبائع
         $waive = $seller->role !== 'admin' && $seller->free_sales_remaining > 0;
         
-        // ✅ حساب المبلغ المستحق للبائع
+        // ✅ التعديل #1 (الأهم): tasleemFee → tasleem_fee
         $payout = $waive 
-            ? (float) $order->total_price  // لو مجاني، البائع ياخد الفلوس كاملة
-            : (float) $order->total_price - (float) $order->tasleemFee;
+            ? (float) $order->total_price
+            : (float) $order->total_price - (float) $order->tasleem_fee;  // ✅ تم التصحيح
 
+        // ✅ التعديل #2: $order->id → $order->order_id
         WalletService::move(
             $seller,
             'release',
             $payout,
             'order',
-            $order->id,
-            'Escrow released for order #' . $order->id
+            $order->order_id,  // ✅ تم التصحيح
+            'Escrow released for order #' . $order->order_id  // ✅ تم التصحيح
         );
 
-        // ✅ لو كان مجاني، خصم 1 من الرصيد المجاني وتحديث fee = 0
         if ($waive) {
             $seller->decrement('free_sales_remaining');
             $order->update(['tasleem_fee' => 0]);
+        }
+
+        // ✅ التعديل #4: زيادة completed_sales للبائع (C2C فقط)
+        if ($seller->role !== 'admin') {
+            $seller->increment('completed_sales');
         }
 
         $order->payment->update(['status' => 'completed']);
@@ -380,7 +386,7 @@ class OrderController extends BaseController
             'You got paid',
             'EGP ' . number_format($payout, 2) . ' added to your wallet.' . ($waive ? ' (First 2 sales fee-free!)' : ''),
             'order',
-            $order->id
+            $order->order_id  // ✅ تم التصحيح
         );
 
         Notify::send(
@@ -389,7 +395,7 @@ class OrderController extends BaseController
             'Order complete',
             'Your order is complete. Enjoy!',
             'order',
-            $order->id
+            $order->order_id  // ✅ تم التصحيح
         );
 
         return $this->sendResponse(
@@ -418,15 +424,15 @@ class OrderController extends BaseController
             return $this->sendError('Too late to cancel', null, 400);
         }
 
-        // استرداد الأموال (إذا كان الدفع بالمحفظة)
         if ($order->payment && $order->payment->status === 'pending') {
             if ($order->payment->payment_method === 'wallet') {
+                // ✅ التعديل #2: $order->id → $order->order_id
                 WalletService::move(
                     $order->user,
                     'refund',
                     (float) $order->payment->amount,
                     'order',
-                    $order->id,
+                    $order->order_id,  // ✅ تم التصحيح
                     'Order cancelled — refund'
                 );
                 $order->payment->update(['status' => 'refunded']);
@@ -436,8 +442,6 @@ class OrderController extends BaseController
         }
 
         $order->update(['status' => 'cancelled']);
-
-        // ❌ مسحنا كود إرجاع المخزون من هنا — الـ Model بيعملها تلقائياً
 
         $refundMessage = $order->payment && $order->payment->payment_method === 'wallet'
             ? 'EGP ' . number_format($order->payment->amount ?? 0, 2) . ' returned to your wallet.'
@@ -449,7 +453,7 @@ class OrderController extends BaseController
             'Order cancelled',
             $refundMessage,
             'order',
-            $order->id
+            $order->order_id  // ✅ تم التصحيح
         );
 
         Notify::send(
@@ -458,7 +462,7 @@ class OrderController extends BaseController
             'Order cancelled',
             null,
             'order',
-            $order->id
+            $order->order_id  // ✅ تم التصحيح
         );
 
         return $this->sendResponse(null, 'Order cancelled');

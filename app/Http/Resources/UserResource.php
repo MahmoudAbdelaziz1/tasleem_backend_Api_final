@@ -21,7 +21,8 @@ class UserResource extends JsonResource
             'role'                   => $this->role,
             'status'                 => $this->status,
             'wallet_balance'         => (float) $this->wallet_balance,
-            'free_sales_remaining'   => (int) $this->free_sales_remaining, // ✅ أضف ده
+            'free_sales_remaining'   => (int) $this->free_sales_remaining, 
+            'completed_sales'        => (int) $this->completed_sales,  // ✅ التعديل #4: أضفنا completed_sales
             'created_at'             => $this->created_at ? $this->created_at->format('Y-m-d H:i:s') : null,
             'updated_at'             => $this->updated_at ? $this->updated_at->format('Y-m-d H:i:s') : null,
         ];

@@ -17,6 +17,14 @@ class ProductController extends BaseController
     {
         $query = Product::with(['category', 'owner', 'images']);
 
+        
+        if ($request->filled('source')) {
+            $isAdmin = $request->source === 'tasleem';
+            $query->whereHas('owner', fn ($q) =>
+                $isAdmin ? $q->where('role', 'admin') : $q->where('role', '!=', 'admin')
+            );
+        }        
+
         // فلتر IDs
         if ($request->has('ids')) {
             $ids = array_values(array_filter(array_map('intval', explode(',', $request->ids))));
