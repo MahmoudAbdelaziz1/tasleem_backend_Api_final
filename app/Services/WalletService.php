@@ -10,16 +10,16 @@ use RuntimeException;
 class WalletService
 {
     /**
-     * تحريك الأموال من/إلى محفظة المستخدم بشكل آمن.
+     * 
      *
-     * @param User $user المستخدم
-     * @param string $type نوع العملية (topup, hold, release, refund, boost_fee, payout)
-     * @param float $signedAmount المبلغ (موجب للإيداع، سالب للخصم)
-     * @param string|null $refType نوع المرجع (order, rental, offer, boost)
-     * @param int|null $refId معرف المرجع
-     * @param string|null $desc وصف العملية
+     * @param User $user 
+     * @param string $type (topup, hold, release, refund, boost_fee, payout)
+     * @param float $signedAmount 
+     * @param string|null $refType (order, rental, offer, boost)
+     * @param int|null $refId 
+     * @param string|null $desc 
      * @return WalletTransaction
-     * @throws RuntimeException إذا كان الرصيد غير كافٍ
+     * @throws RuntimeException 
      */
     public static function move(
         User $user,
@@ -31,22 +31,22 @@ class WalletService
     ): WalletTransaction {
         
         return DB::transaction(function () use ($user, $type, $signedAmount, $refType, $refId, $desc) {
-            // قفل صف المستخدم لمنع التعديل المتزامن
+           
             $user = User::lockForUpdate()->find($user->id);
 
-            // حساب الرصيد الجديد
+           
             $newBalance = (float)$user->wallet_balance + $signedAmount;
 
-            // إذا كان المبلغ سالباً (خصم) والرصيد الجديد سيكون أقل من صفر، ارفض العملية
+        
             if ($newBalance < 0) {
                 throw new RuntimeException('Insufficient wallet balance');
             }
 
-            // تحديث رصيد المستخدم
+            
             $user->wallet_balance = $newBalance;
             $user->save();
 
-            // تسجيل العملية في جدول الحركات
+         
             return WalletTransaction::create([
                 'user_id'       => $user->id,
                 'type'          => $type,

@@ -87,7 +87,7 @@ class OrderController extends BaseController
                 actionType: 'CREATE',
                 actionName: 'order_created',
                 module: 'orders',
-                // ✅ التعديل: $order->id → $order->order_id
+                
                 entityId: $order->order_id,
                 oldData: null,
                 newData: $order->toArray(),
@@ -118,7 +118,7 @@ class OrderController extends BaseController
                 actionType: 'ERROR',
                 actionName: 'order_not_found',
                 module: 'orders',
-                // ✅ التعديل: $id → $id (هذا صحيح لأنه parameter)
+                
                 entityId: $id,
                 oldData: null,
                 newData: null,
@@ -136,7 +136,7 @@ class OrderController extends BaseController
             actionType: 'VIEW',
             actionName: 'view_order_details',
             module: 'orders',
-            // ✅ التعديل: $order->id → $order->order_id
+           
             entityId: $order->order_id,
             oldData: null,
             newData: null,
@@ -186,7 +186,7 @@ class OrderController extends BaseController
                 actionType: 'ERROR',
                 actionName: 'order_update_validation_failed',
                 module: 'orders',
-                // ✅ التعديل: $order->id → $order->order_id
+                
                 entityId: $order->order_id,
                 oldData: null,
                 newData: $request->all(),
@@ -213,7 +213,7 @@ class OrderController extends BaseController
             actionType: 'UPDATE',
             actionName: 'order_update',
             module: 'orders',
-            // ✅ التعديل: $order->id → $order->order_id
+            
             entityId: $order->order_id,
             oldData: $oldData,
             newData: $order->fresh()->toArray(),
@@ -257,7 +257,7 @@ class OrderController extends BaseController
                 actionType: 'ERROR',
                 actionName: 'order_delete_failed',
                 module: 'orders',
-                // ✅ التعديل: $order->id → $order->order_id
+                
                 entityId: $order->order_id,
                 oldData: null,
                 newData: ['status' => $order->status],
@@ -314,7 +314,7 @@ class OrderController extends BaseController
             'Seller confirmed',
             'Your order is confirmed — Tasleem is processing it.',
             'order',
-            // ✅ التعديل: $order->id → $order->order_id
+            
             $order->order_id
         );
 
@@ -352,19 +352,19 @@ class OrderController extends BaseController
 
         $waive = $seller->role !== 'admin' && $seller->free_sales_remaining > 0;
         
-        // ✅ التعديل #1 (الأهم): tasleemFee → tasleem_fee
+        
         $payout = $waive 
             ? (float) $order->total_price
-            : (float) $order->total_price - (float) $order->tasleem_fee;  // ✅ تم التصحيح
+            : (float) $order->total_price - (float) $order->tasleem_fee;  
 
-        // ✅ التعديل #2: $order->id → $order->order_id
+        
         WalletService::move(
             $seller,
             'release',
             $payout,
             'order',
-            $order->order_id,  // ✅ تم التصحيح
-            'Escrow released for order #' . $order->order_id  // ✅ تم التصحيح
+            $order->order_id,  
+            'Escrow released for order #' . $order->order_id 
         );
 
         if ($waive) {
@@ -372,7 +372,7 @@ class OrderController extends BaseController
             $order->update(['tasleem_fee' => 0]);
         }
 
-        // ✅ التعديل #4: زيادة completed_sales للبائع (C2C فقط)
+        
         if ($seller->role !== 'admin') {
             $seller->increment('completed_sales');
         }
@@ -386,7 +386,7 @@ class OrderController extends BaseController
             'You got paid',
             'EGP ' . number_format($payout, 2) . ' added to your wallet.' . ($waive ? ' (First 2 sales fee-free!)' : ''),
             'order',
-            $order->order_id  // ✅ تم التصحيح
+            $order->order_id  
         );
 
         Notify::send(
@@ -395,7 +395,7 @@ class OrderController extends BaseController
             'Order complete',
             'Your order is complete. Enjoy!',
             'order',
-            $order->order_id  // ✅ تم التصحيح
+            $order->order_id  
         );
 
         return $this->sendResponse(
@@ -426,13 +426,13 @@ class OrderController extends BaseController
 
         if ($order->payment && $order->payment->status === 'pending') {
             if ($order->payment->payment_method === 'wallet') {
-                // ✅ التعديل #2: $order->id → $order->order_id
+                
                 WalletService::move(
                     $order->user,
                     'refund',
                     (float) $order->payment->amount,
                     'order',
-                    $order->order_id,  // ✅ تم التصحيح
+                    $order->order_id,  
                     'Order cancelled — refund'
                 );
                 $order->payment->update(['status' => 'refunded']);
@@ -453,7 +453,7 @@ class OrderController extends BaseController
             'Order cancelled',
             $refundMessage,
             'order',
-            $order->order_id  // ✅ تم التصحيح
+            $order->order_id  
         );
 
         Notify::send(
@@ -462,7 +462,7 @@ class OrderController extends BaseController
             'Order cancelled',
             null,
             'order',
-            $order->order_id  // ✅ تم التصحيح
+            $order->order_id  
         );
 
         return $this->sendResponse(null, 'Order cancelled');

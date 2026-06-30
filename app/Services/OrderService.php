@@ -12,14 +12,14 @@ use RuntimeException;
 class OrderService
 {
     /**
-     * إنشاء طلب جديد (يُستخدم للشراء المباشر وقبول العروض).
+     * 
      *
-     * @param int $buyerId معرف المشتري
-     * @param int $productId معرف المنتج
-     * @param int $quantity الكمية
-     * @param float $unitPrice سعر الوحدة
-     * @param string $status حالة الطلب الأولية (pending أو confirmed)
-     * @param string $paymentMethod طريقة الدفع (wallet أو cash)
+     * @param int $buyerId 
+     * @param int $productId 
+     * @param int $quantity
+     * @param float $unitPrice
+     * @param string $status (pending أو confirmed)
+     * @param string $paymentMethod (wallet أو cash)
      * @return Order
      * @throws RuntimeException
      */
@@ -44,28 +44,28 @@ class OrderService
                 throw new RuntimeException('Insufficient product quantity');
             }
 
-            // حساب الرسوم
+            
             $itemTotal   = $quantity * $unitPrice;
             $deliveryFee = (float)config('tasleem.delivery_fee');
             $buyerCharge = $itemTotal + $deliveryFee;
             
-            // ✅ حساب عمولة تسليط
+           
             $seller = $product->owner;
             $sellerIsAdmin = $seller->role === 'admin';
             $hasFreeSales = !$sellerIsAdmin && $seller->free_sales_remaining > 0;
             
-            // ✅ التعديل #3: لو البائع هو admin، العمولة = 0
+         
             $tasleemFee = ($sellerIsAdmin || $hasFreeSales) 
                 ? 0 
                 : round($itemTotal * (float)config('tasleem.commission_rate'), 2);
 
-            // التحقق من الرصيد وحجز الأموال فقط إذا كان الدفع بالمحفظة
+            
             if ($paymentMethod === 'wallet') {
                 if ($buyer->wallet_balance < $buyerCharge) {
                     throw new RuntimeException('Insufficient wallet balance');
                 }
 
-                // خصم المبلغ من المحفظة (Hold)
+                
                 WalletService::move(
                     $buyer,
                     'hold',
@@ -88,7 +88,7 @@ class OrderService
                 'status'        => $status,
             ]);
 
-            // تحديث ref_id للمعاملة فقط إذا كان الدفع بالمحفظة
+            
             if ($paymentMethod === 'wallet') {
                 $buyer->walletTransactions()
                     ->where('ref_type', 'order')
@@ -98,7 +98,7 @@ class OrderService
                     ?->update(['ref_id' => $order->order_id]);
             }
 
-            // إنشاء سجل الدفع بطريقة الدفع المحددة
+           
             Payment::create([
                 'order_id'       => $order->order_id, 
                 'rental_id'      => null,              
@@ -108,15 +108,15 @@ class OrderService
                 'status'         => 'pending',
             ]);
 
-            // خصم الكمية من المنتج
+       
             $product->decrement('quantity', $quantity);
 
-            // إذا نفد المخزون، تغيير حالة المنتج
+       
             if ($product->quantity <= 0) {
                 $product->update(['status' => '0']);
             }
 
-            // إرسال إشعار للبائع
+            
             Notify::send(
                 $product->owner_id,
                 'order_placed',

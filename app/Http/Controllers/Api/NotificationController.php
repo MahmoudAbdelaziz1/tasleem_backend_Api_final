@@ -8,10 +8,7 @@ use Illuminate\Http\Request;
 
 class NotificationController extends BaseController
 {
-    /**
-     * عرض إشعارات المستخدم الحالي.
-     * GET /api/notifications
-     */
+    
     public function index()
     {
         /** @var \App\Models\User $user */
@@ -23,10 +20,7 @@ class NotificationController extends BaseController
         ], 'Notifications retrieved successfully');
     }
 
-    /**
-     * تعليم إشعار واحد كمقروء.
-     * POST /api/notifications/{id}/read
-     */
+  
     public function markRead($id)
     {
         $notification = Notification::where('user_id', auth()->id())->findOrFail($id);
@@ -35,10 +29,7 @@ class NotificationController extends BaseController
         return $this->sendResponse(null, 'Notification marked as read');
     }
 
-    /**
-     * تعليم جميع الإشعارات كمقروءة.
-     * POST /api/notifications/read-all
-     */
+
     public function markAllRead()
     {
         /** @var \App\Models\User $user */

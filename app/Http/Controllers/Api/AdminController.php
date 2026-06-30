@@ -12,7 +12,7 @@ class AdminController extends BaseController
 {
     public function stats()
     {
-        $tasleemUserId = 1; // معرف حساب تسليم الرسمي
+        $tasleemUserId = 1; 
 
         $stats = [
             'products' => [

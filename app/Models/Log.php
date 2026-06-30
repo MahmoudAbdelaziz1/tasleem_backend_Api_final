@@ -153,26 +153,22 @@ protected static function boot()
             $log->ip_address = $_SERVER['REMOTE_ADDR'];
         }
 
-        // ✅ محاولة جمع MAC address
+       
         if (empty($log->mac_address)) {
             $log->mac_address = self::getMacAddress();
         }
     });
 }
 
-/**
- * محاولة الحصول على MAC address
- * ملاحظة: في بيئة web، ده هيرجع MAC address للسيرفر مش للـ client
- * لو التطبيق (Flutter/Mobile) بيبعت MAC address في header، هيتستخدم
- */
+
 private static function getMacAddress(): ?string
 {
-    // محاولة من header (لو التطبيق بيبعت MAC address)
+    
     if (!empty($_SERVER['HTTP_X_MAC_ADDRESS'])) {
         return $_SERVER['HTTP_X_MAC_ADDRESS'];
     }
 
-    // محاولة من النظام (Linux/Mac)
+    
     if (PHP_OS_FAMILY !== 'Windows') {
         $output = shell_exec('cat /sys/class/net/eth0/address 2>/dev/null');
         if ($output) {
@@ -180,7 +176,7 @@ private static function getMacAddress(): ?string
         }
     }
 
-    // محاولة من Windows
+  
     if (PHP_OS_FAMILY === 'Windows') {
         $output = shell_exec('getmac /fo csv /nh 2>nul');
         if ($output) {

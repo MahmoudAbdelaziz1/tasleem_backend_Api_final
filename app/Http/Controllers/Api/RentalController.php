@@ -18,14 +18,14 @@ class RentalController extends BaseController
 {
     public function index(Request $request)
     {
-        // ✅ eager-load product.owner
+        
         $query = Rental::with(['product.owner', 'renter']);
 
         if ($request->filled('renter_id')) {
             $query->where('renter_id', $request->renter_id); // My Rentals
         }
 
-        // ✅ فلتر owner_id - My Sales → Rentals
+        
         if ($request->filled('owner_id')) {
             $query->whereHas('product', fn($q) => $q->where('owner_id', $request->owner_id));
         }
@@ -86,7 +86,7 @@ class RentalController extends BaseController
             return $this->sendError('Validation Error', $validator->errors(), 422);
         }
 
-        // Check product availability
+        
         $conflictingRental = Rental::where('product_id', $request->product_id)
             ->where('status', '!=', 'cancelled')
             ->where(function($query) use ($request) {
@@ -110,7 +110,7 @@ class RentalController extends BaseController
         $paymentMethod = $request->input('payment_method', 'cash');
         $renter = User::find($request->renter_id);
 
-        // ✅ حجز الأموال من المحفظة
+        
         if ($paymentMethod === 'wallet') {
             $charge = $rent + $deliveryFee;
 
@@ -122,11 +122,11 @@ class RentalController extends BaseController
                 );
             }
 
-            // ✅ خصم المبلغ (hold)
+            
             WalletService::move(
                 $renter,
                 'hold',
-                -$charge, // ✅ سالب عشان خصم
+                -$charge, 
                 'rental',
                 null,
                 'Rental escrow for product #' . $request->product_id
@@ -147,7 +147,7 @@ class RentalController extends BaseController
             'status'         => 'pending',
         ]);
 
-        // ✅ تحديث ref_id للمعاملة
+        
         if ($paymentMethod === 'wallet') {
             $renter->walletTransactions()
                 ->where('ref_type', 'rental')
@@ -157,7 +157,7 @@ class RentalController extends BaseController
                 ?->update(['ref_id' => $rental->rental_id]);
         }
 
-        // ✅ إنشاء سجل الدفع
+        
         Payment::create([
             'order_id'       => null,
             'rental_id'      => $rental->rental_id,
@@ -181,7 +181,7 @@ class RentalController extends BaseController
             message: 'Rental created: #' . $rental->rental_id . ' for product: ' . ($rental->product->name ?? 'Unknown') . ' (' . $days . ' days, ' . $paymentMethod . ')'
         );
 
-        // ✅ إشعار المالك
+       
         Notify::send(
             $rental->product->owner_id,
             'rental_requested',
@@ -297,7 +297,7 @@ class RentalController extends BaseController
         return $this->sendResponse(null, 'Rental deleted successfully');
     }
 
-    // ✅ المالك/الأدمن يوافق على الإيجار
+   
     public function confirm(int $id)
     {
         $rental = Rental::with('product')->find($id);
@@ -309,7 +309,7 @@ class RentalController extends BaseController
         /** @var \App\Models\User $currentUser */
         $currentUser = auth()->user();
         
-        // التحقق من الصلاحية (المالك أو الأدمن)
+        
         if (auth()->id() !== $rental->product->owner_id && !$currentUser->isAdmin()) {
             return $this->sendError('Unauthorized', null, 403);
         }
@@ -335,7 +335,7 @@ class RentalController extends BaseController
         );
     }
 
-    // ✅ إتمام الإيجار وصرف الفلوس للمالك
+    
     public function complete(int $id)
     {
         $rental = Rental::with(['product', 'payment'])->find($id);
@@ -347,7 +347,7 @@ class RentalController extends BaseController
         /** @var \App\Models\User $currentUser */
         $currentUser = auth()->user();
         
-        // التحقق من الصلاحية (الأدمن فقط)
+        
         if (!$currentUser->isAdmin()) {
             return $this->sendError('Admin only', null, 403);
         }
@@ -363,7 +363,7 @@ class RentalController extends BaseController
         $owner = User::find($rental->product->owner_id);
         $payout = (float) $rental->total_price - (float) $rental->tasleem_fee;
 
-        // ✅ صرف الفلوس للمالك
+        
         WalletService::move(
             $owner,
             'release',
@@ -400,7 +400,7 @@ class RentalController extends BaseController
         );
     }
 
-    // ✅ إلغاء الإيجار واسترداد الفلوس
+    
     public function cancel(int $id)
     {
         $rental = Rental::with(['product', 'payment'])->find($id);
@@ -412,7 +412,7 @@ class RentalController extends BaseController
         /** @var \App\Models\User $currentUser */
         $currentUser = auth()->user();
         
-        // التحقق من الصلاحية (المستأجر أو الأدمن)
+        
         $isRenterOrAdmin = auth()->id() === $rental->renter_id || $currentUser->isAdmin();
 
         if (!$isRenterOrAdmin) {
@@ -423,7 +423,7 @@ class RentalController extends BaseController
             return $this->sendError('Too late to cancel', null, 400);
         }
 
-        // ✅ استرداد الفلوس (لو كان الدفع بالمحفظة)
+        
         if ($rental->payment && $rental->payment->status === 'pending') {
             if ($rental->payment->payment_method === 'wallet') {
                 WalletService::move(

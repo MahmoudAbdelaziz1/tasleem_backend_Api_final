@@ -7,7 +7,7 @@ use App\Models\Payment;
 use App\Http\Resources\PaymentResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use App\Http\Controllers\Api\LogController;  // ✅ إضافة هذا السطر
+use App\Http\Controllers\Api\LogController;  
 
 class PaymentController extends BaseController
 {
@@ -25,7 +25,7 @@ class PaymentController extends BaseController
 
         $payments = $query->latest()->paginate($request->get('per_page', 15));
 
-        // ✅ تسجيل عرض المدفوعات
+       
         LogController::addLog(
             userId: auth()->id(),
             actionType: 'VIEW',

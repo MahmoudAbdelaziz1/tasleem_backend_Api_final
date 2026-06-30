@@ -20,7 +20,7 @@ class AuthController extends Controller
             'email'       => 'required|string|email|max:255|unique:users',
             'password'    => 'required|string|min:8|confirmed',
             'phone'       => 'nullable|regex:/^[^<>{}]*$/|string|max:20',
-            'national_id' => 'required|string|max:30|unique:users', // ✅ للمهمة 4
+            'national_id' => 'required|string|max:30|unique:users', 
         ]);
 
         if ($validator->fails()) {
@@ -35,7 +35,7 @@ class AuthController extends Controller
             'email'        => $request->email,
             'password'     => Hash::make($request->password),
             'phone'        => $request->phone,
-            'national_id'  => $request->national_id, // ✅ للمهمة 4
+            'national_id'  => $request->national_id, 
             'role'         => 'user',
             'status'       => '1',
         ]);
@@ -88,7 +88,7 @@ class AuthController extends Controller
 
         $user = User::where('email', $request->email)->firstOrFail();
 
-        // ✅ التحقق من حالة المستخدم (معطل ولا لا)
+        
         if ($user->status === '0' || $user->status === 0) {
             return response()->json([
                 'success' => false,

@@ -22,8 +22,7 @@ class DashboardController extends Controller
         $user = auth()->user();
         $cacheKey = "dashboard_user_{$user->id}";
         
-        // استخدام الكاش لتحسين الأداء (15 دقيقة)
-        // احذف Cache::remember واستخدم البناء المباشر أثناء التطوير
+     
         $data = Cache::remember($cacheKey, 900, function () use ($user) {
             return $this->buildDashboardData($user);
         });
@@ -33,10 +32,10 @@ class DashboardController extends Controller
     
     private function buildDashboardData($user)
     {
-        // 🔹 إحصائيات المشتري (لكل المستخدمين)
+       
         $buyer_stats = $this->getBuyerStats($user->id);
         
-        // 🔹 إحصائيات البائع/المؤجر (تظهر فقط إذا كان لدى المستخدم منتجات)
+      
         $seller_stats = null;
         $has_products = Product::where('owner_id', $user->id)->exists();
         
@@ -44,11 +43,11 @@ class DashboardController extends Controller
             $seller_stats = $this->getSellerStats($user->id);
         }
         
-        // 🔹 بيانات الرسوم البيانية
+       
         $revenue_chart = $this->getRevenueChartData($user->id, 30);
         $order_status_chart = $this->getOrderStatusData($user->id);
         
-        // 🔹 آخر الطلبات (كمشتري)
+        
         $recent_orders = Order::where('user_id', $user->id)
             ->with(['product:id,name,price', 'product.images:id,product_id,image_url'])
             ->latest()
@@ -56,16 +55,16 @@ class DashboardController extends Controller
             ->get()
             ->map(fn($order) => $this->formatOrderData($order));
         
-        // 🔹 منتجاتي (إذا كان يبيع أو يؤجر)
+    
         $my_products = null;
         if ($has_products || $user->role === 'Admin') {
             $my_products = $this->getMyProductsPerformance($user->id);
         }
         
-        // 🔹 منتجات مقترحة (لا تظهر منتجات المستخدم نفسه)
+       
         $recommended = $this->getRecommendedProducts($user->id);
         
-        // 🔹 تنبيهات هامة
+      
         $alerts = $this->getUserAlerts($user->id, $user->role);
         
         return [
@@ -124,14 +123,14 @@ class DashboardController extends Controller
     
     private function getWishlistCount($userId): int
     {
-        // التعامل المرن مع اسم الجدول (wishlist أو wishlists) حسب ما هو موجود عندك
+        
         $table = DB::getSchemaBuilder()->hasTable('wishlists') ? 'wishlists' : 'wishlist';
         return DB::table($table)->where('user_id', $userId)->count();
     }
     
     private function getRevenueChartData($userId, $days = 30): array
     {
-        // إذا كان أدمن: يعرض إيرادات المنصة كاملة، إذا كان مستخدم: يعرض إيرادات منتجاته فقط
+        
         $query = Order::where('status', 'delivered')
             ->whereDate('created_at', '>=', Carbon::now()->subDays($days));
             
@@ -166,7 +165,7 @@ class DashboardController extends Controller
     
     private function getOrderStatusData($userId): array
     {
-        // إذا كان أدمن: يعرض كل الطلبات، إذا كان مستخدم: يعرض طلبات منتجاته فقط
+        
         $query = Order::query();
         
         if ($userId && auth()->user()->role !== 'Admin') {
@@ -178,7 +177,7 @@ class DashboardController extends Controller
             ->pluck('count', 'status')
             ->toArray();
         
-        // ضمان وجود كل الحالات في المصفوفة
+        
         $statuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled', 'returned'];
         foreach ($statuses as $status) {
             if (!isset($data[$status])) {
@@ -193,7 +192,7 @@ class DashboardController extends Controller
     {
         $query = Product::query();
         
-        // الأدمن يشاهد كل المنتجات، المستخدم يشاهد منتجاته فقط
+        
         if (auth()->user()->role !== 'Admin') {
             $query->where('owner_id', $userId);
         }
@@ -219,7 +218,7 @@ class DashboardController extends Controller
     
     private function getRecommendedProducts($userId, $limit = 4)
     {
-        // جلب التوصيات من جدول الذكاء الاصطناعي إذا وجد
+       
         $aiRecs = DB::table('ai_recommendations')
             ->where('user_id', $userId)
             ->where(function($q) {
@@ -231,7 +230,7 @@ class DashboardController extends Controller
             ->pluck('product_id');
         
         $query = Product::where('status', 'available')
-            ->where('owner_id', '!=', $userId) // استبعاد منتجات المستخدم نفسه
+            ->where('owner_id', '!=', $userId) 
         
             ->with(['images' => fn($q) => $q->take(1)])
             ->select(['id', 'name', 'price', 'rate', 'pay_count']);
@@ -239,7 +238,7 @@ class DashboardController extends Controller
         if ($aiRecs->count() > 0) {
             $query->whereIn('id', $aiRecs);
         } else {
-            // Fallback: خوارزمية بسيطة للمنتجات الشائعة
+           
             $query->orderByRaw('(view_count * 0.2 + rate * 0.4 + pay_count * 0.4) DESC');
         }
         
@@ -250,7 +249,7 @@ class DashboardController extends Controller
     {
         $alerts = [];
         
-        // تنبيه: إيجار ينتهي خلال 3 أيام (للمستأجر)
+        
         $endingRentals = Rental::where('renter_id', $userId)
             ->where('status', 'active')
             ->whereBetween('end_date', [now(), now()->addDays(3)])
@@ -265,7 +264,7 @@ class DashboardController extends Controller
             ];
         }
         
-        // تنبيه: طلبات معلقة على منتجاتك (للبائع)
+        
         if ($userRole !== 'Admin') {
             $pendingOrders = Order::whereHas('product', fn($q) => $q->where('owner_id', $userId))
                 ->where('status', 'pending')

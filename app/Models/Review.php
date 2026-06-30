@@ -110,7 +110,7 @@ class Review extends Model
            
             if ($review->rating < 1 || $review->rating > 5) {
                 throw ValidationException::withMessages([
-                    'rating' => 'التقييم يجب أن يكون بين 1 و 5'
+                    'rating' =>'The rating should be between 1 and 5'
                 ]);
             }
         });

@@ -8,10 +8,7 @@ use Illuminate\Http\Request;
 
 class WalletController extends BaseController
 {
-    /**
-     * عرض المحفظة + آخر 50 حركة.
-     * GET /api/wallet
-     */
+   
     public function show()
     {
         /** @var \App\Models\User $user */
@@ -23,11 +20,7 @@ class WalletController extends BaseController
         ], 'Wallet retrieved successfully');
     }
 
-    /**
-     * شحن المحفظة (محاكاة - Simulated top-up).
-     * POST /api/wallet/topup
-     * Body: { "amount": 500 }
-     */
+  
     public function topup(Request $request)
     {
         $request->validate([

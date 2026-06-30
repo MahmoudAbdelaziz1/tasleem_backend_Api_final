@@ -160,7 +160,7 @@ class ProductImageController extends BaseController
 
         $rawUrl = $image->getAttributes()['image_url'] ?? null;
         
-        // Delete file from storage ONLY if it's a local file (not external URL)
+        
         if ($rawUrl && !str_starts_with($rawUrl, 'http://') && !str_starts_with($rawUrl, 'https://')) {
             if (Storage::disk('public')->exists($rawUrl)) {
                 Storage::disk('public')->delete($rawUrl);

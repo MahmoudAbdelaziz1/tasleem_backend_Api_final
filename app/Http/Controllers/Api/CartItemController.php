@@ -7,7 +7,7 @@ use App\Models\CartItem;
 use App\Http\Resources\CartItemResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use App\Http\Controllers\Api\LogController;  // ✅ إضافة هذا السطر
+use App\Http\Controllers\Api\LogController;  
 
 class CartItemController extends BaseController
 {
@@ -21,7 +21,7 @@ class CartItemController extends BaseController
 
         $items = $query->paginate($request->get('per_page', 15));
 
-        // ✅ تسجيل عرض عناصر السلة
+        
         LogController::addLog(
             userId: auth()->id(),
             actionType: 'VIEW',

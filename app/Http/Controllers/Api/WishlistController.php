@@ -66,7 +66,7 @@ class WishlistController extends BaseController
             return $this->sendError('Validation Error', $validator->errors(), 422);
         }
 
-        // Check if already in wishlist
+       
         $existing = Wishlist::where('user_id', $request->user_id)
             ->where('product_id', $request->product_id)
             ->first();

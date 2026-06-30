@@ -7,7 +7,7 @@ use App\Models\Review;
 use App\Http\Resources\ReviewResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use App\Http\Controllers\Api\LogController;  // ✅ إضافة هذا السطر
+use App\Http\Controllers\Api\LogController;  
 
 class ReviewController extends BaseController
 {
@@ -29,7 +29,7 @@ class ReviewController extends BaseController
 
         $reviews = $query->latest()->paginate($request->get('per_page', 15));
 
-        // ✅ تسجيل عرض التقييمات
+        
         LogController::addLog(
             userId: auth()->id(),
             actionType: 'VIEW',
@@ -61,7 +61,7 @@ class ReviewController extends BaseController
         ]);
 
         if ($validator->fails()) {
-            // ✅ تسجيل فشل التحقق
+            
             LogController::addLog(
                 userId: auth()->id() ?? $request->user_id,
                 actionType: 'ERROR',
@@ -79,13 +79,13 @@ class ReviewController extends BaseController
             return $this->sendError('Validation Error', $validator->errors(), 422);
         }
 
-        // Check if user already reviewed this product
+        
         $existing = Review::where('product_id', $request->product_id)
             ->where('user_id', $request->user_id)
             ->first();
 
         if ($existing) {
-            // ✅ تسجيل محاولة إضافة تقييم مكرر
+            
             LogController::addLog(
                 userId: $request->user_id,
                 actionType: 'ERROR',
@@ -105,7 +105,7 @@ class ReviewController extends BaseController
 
         $review = Review::create($request->all());
 
-        // ✅ تسجيل إنشاء التقييم بنجاح
+        
         LogController::addLog(
             userId: $review->user_id,
             actionType: 'CREATE',
@@ -132,7 +132,7 @@ class ReviewController extends BaseController
         $review = Review::with(['user', 'product'])->find($id);
 
         if (!$review) {
-            // ✅ تسجيل محاولة عرض تقييم غير موجود
+            
             LogController::addLog(
                 userId: auth()->id(),
                 actionType: 'ERROR',
@@ -150,7 +150,7 @@ class ReviewController extends BaseController
             return $this->sendError('Review not found');
         }
 
-        // ✅ تسجيل عرض تفاصيل التقييم
+        
         LogController::addLog(
             userId: auth()->id(),
             actionType: 'VIEW',
@@ -176,7 +176,7 @@ class ReviewController extends BaseController
         $review = Review::find($id);
 
         if (!$review) {
-            // ✅ تسجيل محاولة تحديث تقييم غير موجود
+            
             LogController::addLog(
                 userId: auth()->id(),
                 actionType: 'ERROR',

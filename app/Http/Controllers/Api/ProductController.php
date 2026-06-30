@@ -33,7 +33,7 @@ class ProductController extends BaseController
             }
         }
 
-        // باقي الفلاتر
+        
         if ($request->has('category_id')) {
             $query->where('category_id', $request->category_id);
         }
@@ -61,10 +61,10 @@ class ProductController extends BaseController
             $query->where('price', '<=', $request->max_price);
         }
 
-        // ترتيب المنتجات المعززة أولاً (دائماً)
+       
         $query->boostedFirst();
 
-        // الترتيب العادي
+       
         $allowedSortFields = ['id', 'name', 'price', 'created_at', 'updated_at', 'view_count', 'rate', 'pay_count', 'addingToCart_count', 'quantity'];
         
         $sortField = $request->get('sort_by', 'created_at');
@@ -251,11 +251,7 @@ class ProductController extends BaseController
 
 
 
-    /**
-     * تعزيز المنتج (Boost)
-     * POST /api/products/{id}/boost
-     * Body: { "days": 7 }
-     */
+
     public function boost(Request $request, $id)
     {
         $request->validate([
@@ -264,14 +260,14 @@ class ProductController extends BaseController
 
         $product = \App\Models\Product::findOrFail($id);
 
-        // التحقق من أن المستخدم هو صاحب المنتج
+        
         if ($product->owner_id !== auth()->id()) {
             return $this->sendError('Not your product', null, 403);
         }
 
         $cost = (float)config('tasleem.boost_fee_per_day') * $request->days;
 
-        // خصم المبلغ من المحفظة
+       
         try {
             \App\Services\WalletService::move(
                 auth()->user(),
@@ -285,13 +281,13 @@ class ProductController extends BaseController
             return $this->sendError($e->getMessage(), null, 402);
         }
 
-        // تحديث المنتج
+        
         $product->update([
             'is_boosted'       => true,
             'boost_expires_at' => now()->addDays($request->days),
         ]);
 
-        // إشعار المستخدم
+       
         \App\Services\Notify::send(
             auth()->id(),
             'boost_activated',

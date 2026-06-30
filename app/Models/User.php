@@ -118,7 +118,7 @@ class User extends Authenticatable
 
 
 
-        // العلاقات الجديدة للمحفظة والإشعارات
+        
     public function walletTransactions()
     {
         return $this->hasMany(WalletTransaction::class);

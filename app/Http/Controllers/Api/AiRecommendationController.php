@@ -7,7 +7,7 @@ use App\Models\AiRecommendation;
 use App\Http\Resources\AiRecommendationResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
-use App\Http\Controllers\Api\LogController;  // ✅ إضافة هذا السطر
+use App\Http\Controllers\Api\LogController;  
 
 class AiRecommendationController extends BaseController
 {

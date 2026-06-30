@@ -112,16 +112,16 @@ class Order extends Model
             $order->product->increment('pay_count', $order->quantity);
         });
 
-        // ✅ إرجاع المخزون + تفعيل المنتج لما يتإلغى
+        
         static::updating(function ($order) {
             if ($order->isDirty('status') && $order->status === 'cancelled') {
                 $product = $order->product;
                 
                 if ($product) {
-                    // رجع الكمية
+                  
                     $product->increment('quantity', $order->quantity);
                     
-                    // لو المنتج كان "نفذ من المخزون" (status = 0)، رجعه متاح (status = 1)
+                  
                     if ($product->quantity > 0 && $product->status === '0') {
                         $product->update(['status' => '1']);
                     }

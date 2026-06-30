@@ -7,14 +7,14 @@ use App\Models\Notification;
 class Notify
 {
     /**
-     * إرسال إشعار لمستخدم.
+     * 
      *
-     * @param int $userId معرف المستخدم المرسل إليه
-     * @param string $type نوع الإشعار (order_placed, offer_received, etc.)
-     * @param string $title عنوان الإشعار
-     * @param string|null $body نص الإشعار
-     * @param string|null $refType نوع المرجع (order, offer, product)
-     * @param int|null $refId معرف المرجع
+     * @param int $userId 
+     * @param string $type (order_placed, offer_received, etc.)
+     * @param string $title 
+     * @param string|null $body 
+     * @param string|null $refType(order, offer, product)
+     * @param int|null $refId 
      * @return void
      */
     public static function send(
